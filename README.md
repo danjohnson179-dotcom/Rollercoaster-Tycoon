@@ -1,6 +1,14 @@
 # RideOps — Rollercoaster Operator Simulator
 
-A desktop-first browser game foundation for realistic theme-park ride operation. The current playable attraction is **Toxicator**, a procedural WebGL pendulum-disc ride with a manual operator console, enforced interlocks, hold-to-run motion controls, emergency-stop handling, telemetry and scoring.
+A desktop-first browser game foundation for realistic theme-park ride operation. The current playable attraction is **Toxicator**, a procedural WebGL suspended Top Spin with a complete park opening/loading/cycle/unloading flow, 38 live seat circuits, automatic programmes, manual brake-and-momentum operation, enforced interlocks, guest scoring and throughput challenges.
+
+## Toxicator operation
+
+The gondola begins empty. Energise the controls, open the ride entrance and then open the load gate to board guests from the queue. Close the gate, close and prove the occupied restraints, confirm the platform, enable the main arm drive and hold dispatch. At the end of a cycle, open the restraints and load gate to unload before accepting the next group.
+
+The manual mode models the defining Top Spin interaction: electric arm drive with an independently swinging gondola controlled by a brake. The gondola is not treated as a second powered motor. Automatic modes provide three original ride sequences.
+
+Keyboard controls: `K` control key, `O` entrance, `G` load gate, `R` restraints, `C` platform clear, `D` drive enable, `Space` dispatch, arrow keys arm drive, `B` gondola brake, `L` arm lock, `S` stop/return, `W` water effects, `1`–`4` operating mode, `E` emergency stop and `F` fault reset.
 
 ## Run locally
 

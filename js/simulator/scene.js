@@ -7,7 +7,7 @@ export class RideScene{
   this.canvas=canvas;this.scene=new THREE.Scene();this.scene.background=new THREE.Color(0x071015);this.scene.fog=new THREE.FogExp2(0x071015,.022);
   this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.42;
   this.camera=new THREE.PerspectiveCamera(42,1,.1,120);this.cameraViews={operator:{position:[13.5,7.3,18],target:[0,5.1,0]},wide:{position:[20,13,25],target:[0,5.4,0]},platform:{position:[0,5.4,15],target:[0,5.1,0]}};this.camera.position.fromArray(this.cameraViews.operator.position);this.cameraTarget=new THREE.Vector3(...this.cameraViews.operator.target);this.desiredCamera=this.camera.position.clone();this.desiredTarget=this.cameraTarget.clone();
-  this.materials=this.createMaterials();this.fountains=[];this.beacons=[];this.gondolaAngle=0;this.armAngle=0;this.buildEnvironment();this.buildRide();this.buildShowLighting();this.resize();new ResizeObserver(()=>this.resize()).observe(canvas.parentElement);
+  this.materials=this.createMaterials();this.fountains=[];this.beacons=[];this.riders=[];this.restraintFrames=[];this.queueGuests=[];this.platformGates=[];this.gondolaAngle=0;this.armAngle=0;this.buildEnvironment();this.buildRide();this.buildGuestOperation();this.buildShowLighting();this.resize();new ResizeObserver(()=>this.resize()).observe(canvas.parentElement);
  }
  createMaterials(){return{
   black:new THREE.MeshStandardMaterial({color:0x11171a,metalness:.72,roughness:.3}),
@@ -36,6 +36,12 @@ export class RideScene{
   for(const x of[-12.5,12.5]){this.beamBetween([x,.3,-3],[x,4.5,-3],.13,this.materials.fence);this.beamBetween([x,4.5,-3],[x,4.5,5],.13,this.materials.fence)}
  }
  addFence(x1,x2,z){for(let x=x1;x<=x2;x+=1.7)this.box([.09,1.45,.09],[x,.72,z],this.materials.fence);this.box([Math.abs(x2-x1)+.3,.09,.09],[(x1+x2)/2,1.25,z],this.materials.fence);this.box([Math.abs(x2-x1)+.3,.06,.06],[(x1+x2)/2,.58,z],this.materials.fence)}
+ buildGuestOperation(){
+  const createGate=(position,width)=>{const gate=new THREE.Group(),direction=Math.sign(width)||1,size=Math.abs(width);gate.position.set(...position);this.scene.add(gate);this.box([size,.12,.12],[direction*size/2,1.02,0],this.materials.fence,gate);for(let x=.2;x<size;x+=.42)this.box([.06,1.5,.06],[direction*x,.73,0],this.materials.fence,gate);return gate};
+  this.entranceGate=createGate([-11.8,0,8.7],2.4);this.platformGates.push(createGate([-7.35,1.2,4.45],2.1),createGate([7.35,1.2,4.45],-2.1));
+  const guestColours=[0x748c91,0x8d6049,0x61784e,0x8b7b3d,0x536b83,0x87576b];
+  for(let i=0;i<24;i++){const guest=new THREE.Group(),row=Math.floor(i/8),column=i%8;guest.position.set(-11.2+column*.62,.02,7.75-row*.78);this.scene.add(guest);const bodyMaterial=new THREE.MeshStandardMaterial({color:guestColours[i%guestColours.length],roughness:.82});this.box([.32,.72,.25],[0,.65,0],bodyMaterial,guest);const headMaterial=new THREE.MeshStandardMaterial({color:[0xd8aa7b,0x8a5c3b,0xefc7a1][i%3],roughness:.9});const head=this.mesh(new THREE.SphereGeometry(.16,10,7),headMaterial,guest);head.position.y=1.16;guest.visible=false;guest.userData.baseY=guest.position.y;this.queueGuests.push(guest)}
+ }
  buildRide(){
   this.ride=new THREE.Group();this.scene.add(this.ride);
   this.box([19,.8,9],[0,.72,0],this.materials.concrete,this.ride);this.box([17.6,.18,7.7],[0,1.2,0],this.materials.darkSteel,this.ride);
@@ -55,8 +61,8 @@ export class RideScene{
   for(const row of[-1,1])for(let i=0;i<19;i++){
    const x=-5.25+i*.583,seatGroup=new THREE.Group();seatGroup.position.set(x,.15,row*.78);seatGroup.rotation.y=row<0?Math.PI:0;this.gondola.add(seatGroup);
    this.box([.5,.2,.7],[0,-.08,0],this.materials.seat,seatGroup);this.box([.5,1.08,.18],[0,.48,-.29],this.materials.seat,seatGroup);this.box([.07,.85,.1],[-.245,.23,0],this.materials.steel,seatGroup);this.box([.07,.85,.1],[.245,.23,0],this.materials.steel,seatGroup);
-   const torsoMat=new THREE.MeshStandardMaterial({color:riderColours[(i+(row>0?2:0))%riderColours.length],roughness:.75});this.box([.31,.6,.25],[0,.3,.05],torsoMat,seatGroup);const head=this.mesh(new THREE.SphereGeometry(.145,12,8),new THREE.MeshStandardMaterial({color:[0xd8aa7b,0x8a5c3b,0xefc7a1][i%3],roughness:.9}),seatGroup);head.position.set(0,.82,.02);
-   const restraint=this.mesh(new THREE.TorusGeometry(.225,.042,8,16,Math.PI),this.materials.lime,seatGroup);restraint.position.set(0,.56,.33);restraint.rotation.z=Math.PI;this.box([.055,.62,.07],[-.215,.28,.31],this.materials.lime,seatGroup);this.box([.055,.62,.07],[.215,.28,.31],this.materials.lime,seatGroup)
+   const rider=new THREE.Group();seatGroup.add(rider);const torsoMat=new THREE.MeshStandardMaterial({color:riderColours[(i+(row>0?2:0))%riderColours.length],roughness:.75});this.box([.31,.6,.25],[0,.3,.05],torsoMat,rider);const head=this.mesh(new THREE.SphereGeometry(.145,12,8),new THREE.MeshStandardMaterial({color:[0xd8aa7b,0x8a5c3b,0xefc7a1][i%3],roughness:.9}),rider);head.position.set(0,.82,.02);rider.visible=false;this.riders.push(rider);
+   const restraintFrame=new THREE.Group();seatGroup.add(restraintFrame);const restraint=this.mesh(new THREE.TorusGeometry(.225,.042,8,16,Math.PI),this.materials.lime,restraintFrame);restraint.position.set(0,.56,.33);restraint.rotation.z=Math.PI;this.box([.055,.62,.07],[-.215,.28,.31],this.materials.lime,restraintFrame);this.box([.055,.62,.07],[.215,.28,.31],this.materials.lime,restraintFrame);restraintFrame.rotation.x=-1.15;this.restraintFrames.push(restraintFrame)
   }
   this.buildFountains();this.buildSign();this.setArmPosition(0);
  }
@@ -70,8 +76,11 @@ export class RideScene{
  resize(){const parent=this.canvas.parentElement,w=Math.max(1,parent.clientWidth),h=Math.max(1,parent.clientHeight);this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix()}
  setCamera(name){const view=this.cameraViews[name]||this.cameraViews.operator;this.desiredCamera.fromArray(view.position);this.desiredTarget.fromArray(view.target)}
  update(state,dt){
-  const targetArm=THREE.MathUtils.degToRad(state.arm);this.armAngle=THREE.MathUtils.lerp(this.armAngle,targetArm,Math.min(1,dt*3.2));for(const pivot of this.armPivots)pivot.rotation.x=this.armAngle;this.gondola.position.set(0,this.pivotY-Math.cos(this.armAngle)*this.armRadius,-Math.sin(this.armAngle)*this.armRadius);this.gondolaAngle+=state.rpm*Math.PI*2/60*dt;this.gondola.rotation.x=this.gondolaAngle;
-  const running=state.mode==='CYCLE RUNNING';for(let i=0;i<this.fountains.length;i++){const jet=this.fountains[i],pulse=running?Math.max(.04,.5+.5*Math.sin(performance.now()*.004+i*.8)):0;jet.visible=running;jet.scale.y=.2+pulse*4.5;jet.position.y=1.45+jet.scale.y*.5;jet.material.opacity=.32+pulse*.5}for(let i=0;i<this.beacons.length;i++)this.beacons[i].material.emissiveIntensity=1.2+1.8*Math.max(0,Math.sin(performance.now()*.006+i*Math.PI));
+  const targetArm=THREE.MathUtils.degToRad(state.armAngle),targetGondola=THREE.MathUtils.degToRad(state.gondolaAngle),blend=Math.min(1,dt*7);this.armAngle=THREE.MathUtils.lerp(this.armAngle,targetArm,blend);for(const pivot of this.armPivots)pivot.rotation.x=this.armAngle;this.gondola.position.set(0,this.pivotY-Math.cos(this.armAngle)*this.armRadius,-Math.sin(this.armAngle)*this.armRadius);this.gondolaAngle=THREE.MathUtils.lerp(this.gondolaAngle,targetGondola,blend);this.gondola.rotation.x=this.gondolaAngle;
+  for(let i=0;i<this.riders.length;i++)this.riders[i].visible=i<state.onboard;for(const frame of this.restraintFrames)frame.rotation.x=-1.15*(1-state.restraintProgress);
+  const now=performance.now();for(let i=0;i<this.queueGuests.length;i++){const guest=this.queueGuests[i];guest.visible=state.rideOpen&&i<Math.min(state.queue,this.queueGuests.length);guest.position.y=guest.userData.baseY+(guest.visible?Math.sin(now*.002+i)*.018:0)}
+  this.entranceGate.rotation.y=THREE.MathUtils.lerp(this.entranceGate.rotation.y,state.rideOpen?-1.35:0,Math.min(1,dt*4));for(let i=0;i<this.platformGates.length;i++){const gate=this.platformGates[i],direction=i?1:-1;gate.rotation.y=THREE.MathUtils.lerp(gate.rotation.y,state.loadGate?direction*1.28:0,Math.min(1,dt*4))}
+  const running=state.mode==='CYCLE ACTIVE'||state.mode==='RETURNING TO LOAD';for(let i=0;i<this.fountains.length;i++){const jet=this.fountains[i],pulse=running&&state.water?Math.max(.04,.5+.5*Math.sin(now*.004+i*.8)):0;jet.visible=running&&state.water;jet.scale.y=.2+pulse*4.5;jet.position.y=1.45+jet.scale.y*.5;jet.material.opacity=.32+pulse*.5}for(let i=0;i<this.beacons.length;i++)this.beacons[i].material.emissiveIntensity=state.power?.7+2.2*Math.max(0,Math.sin(now*.006+i*Math.PI)):.08;
   this.camera.position.lerp(this.desiredCamera,Math.min(1,dt*2.4));this.cameraTarget.lerp(this.desiredTarget,Math.min(1,dt*2.4));this.camera.lookAt(this.cameraTarget);this.renderer.render(this.scene,this.camera)
  }
 }

@@ -1,9 +1,208 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>Toxicator Console // RideOps</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="css/main.css"></head>
-<body class="sim-page"><div id="sim-loader" class="loader"><div class="loader__mark">TX</div><div class="loader__track"><i></i></div><span id="load-status">Loading WebGL environment</span></div><header class="sim-header"><a class="brand" href="catalogue.html"><span class="brand__icon">RO</span><span>RIDE<strong>OPS</strong></span></a><span class="sim-header__divider"></span><div><small>ATTRACTION</small><strong>TOXICATOR / CONSOLE 01</strong></div><div class="sim-header__right"><span id="clock">00:00:00</span><button class="icon-button" id="help-button">?</button><a class="icon-button" href="catalogue.html">×</a></div></header>
-<main class="sim-layout"><section class="viewport"><canvas id="ride-canvas"></canvas><div id="webgl-error" class="webgl-error" hidden><strong>3D view unavailable</strong><span>The control simulation remains operational.</span></div><div class="view-tabs"><button data-camera="operator" class="active">Operator</button><button data-camera="wide">Wide</button><button data-camera="platform">Platform</button></div><div class="viewport__hud"><div><small>ARM POSITION</small><strong><span data-telemetry="arm">0.0</span>°</strong></div><div><small>GONDOLA SPEED</small><strong><span data-telemetry="rpm">0.0</span> RPM</strong></div><div><small>CYCLE TIME</small><strong data-telemetry="time">00:00</strong></div></div></section>
-<aside class="console"><div class="console__top"><div><small>SYSTEM STATE</small><strong id="state-label"><i></i> COLD &amp; SAFE</strong></div><div class="score"><small>OPERATOR SCORE</small><strong id="score">100</strong></div></div><div id="message-display" class="message-display"><span>SYS</span><p>Turn control key to begin system startup.</p></div>
-<section class="panel-section"><h2>Safety circuits <span>01</span></h2><div class="annunciators"><div data-lamp="power"><i></i>Control power</div><div data-lamp="gates"><i></i>Gates closed</div><div data-lamp="restraints"><i></i>Restraints locked</div><div data-lamp="platform"><i></i>Platform clear</div><div data-lamp="drive"><i></i>Drive ready</div><div data-lamp="fault"><i></i>System fault</div></div></section>
-<section class="panel-section"><h2>Platform procedure <span>02</span></h2><div class="control-row"><button class="panel-button panel-button--key" id="power"><i></i><span>CONTROL KEY<small>OFF / ON</small></span></button><button class="panel-button" id="gates"><i></i><span>PLATFORM GATES<small>OPEN</small></span></button><button class="panel-button" id="restraints"><i></i><span>RESTRAINTS<small>UNLOCKED</small></span></button><button class="panel-button" id="platform"><i></i><span>PLATFORM CHECK<small>NOT CLEAR</small></span></button></div></section>
-<section class="panel-section"><h2>Drive control <span>03</span></h2><div class="drive-grid"><button class="panel-button panel-button--drive" id="drive"><i></i><span>DRIVE ENABLE<small>DISABLED</small></span></button><label class="speed-selector">SPEED SET<select id="speed"><option value="1">1 — Inspection</option><option value="2" selected>2 — Standard</option><option value="3">3 — Intense</option></select></label><button class="hold-button" id="arm-down">▼<span>ARMS REVERSE</span></button><button class="hold-button" id="arm-up">▲<span>ARMS FORWARD</span></button><button class="hold-button" id="rotate-left">↶<span>GONDOLA REV</span></button><button class="hold-button" id="rotate-right">↷<span>GONDOLA FWD</span></button></div></section>
-<section class="panel-section panel-section--dispatch"><h2>Cycle control <span>04</span></h2><div class="dispatch-row"><button id="reset" class="round-button round-button--blue"><i></i><span>FAULT<br>RESET</span></button><button id="dispatch" class="dispatch-button"><i></i><span>HOLD TO<br>DISPATCH</span></button><button id="estop" class="estop"><i></i><span>EMERGENCY<br>STOP</span></button></div></section></aside></main>
-<div id="toast-region" class="toasts" aria-live="polite"></div><dialog id="help-dialog"><button id="help-close">×</button><p class="eyebrow">Console quick start</p><h2>Dispatch sequence</h2><ol><li>Turn the control key on.</li><li>Close gates and lock restraints.</li><li>Confirm the platform is clear.</li><li>Enable the drive.</li><li>Hold dispatch until the cycle starts.</li><li>Use hold-to-run controls to shape the ride.</li></ol><p>Emergency stop latches immediately. Release it, then press fault reset before restarting.</p></dialog><script type="module" src="js/simulator/main.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="theme-color" content="#090c10">
+  <title>Toxicator Operations // RideOps</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body class="sim-page">
+  <div id="sim-loader" class="loader">
+    <div class="loader__mark">TX</div>
+    <div class="loader__track"><i></i></div>
+    <span id="load-status">Loading Top Spin systems</span>
+  </div>
+
+  <header class="sim-header">
+    <a class="brand" href="catalogue.html">
+      <span class="brand__icon">RO</span>
+      <span>RIDE<strong>OPS</strong></span>
+    </a>
+    <span class="sim-header__divider"></span>
+    <div>
+      <small>ATTRACTION</small>
+      <strong>TOXICATOR / SUSPENDED TOP SPIN</strong>
+    </div>
+    <div class="sim-header__right">
+      <span id="clock">00:00:00</span>
+      <button class="icon-button" id="help-button" aria-label="Open operating manual">?</button>
+      <a class="icon-button" href="catalogue.html" aria-label="Exit simulator">×</a>
+    </div>
+  </header>
+
+  <main class="sim-layout">
+    <section class="viewport">
+      <canvas id="ride-canvas"></canvas>
+      <div id="webgl-error" class="webgl-error" hidden>
+        <strong>3D view unavailable</strong>
+        <span>The control simulation remains operational.</span>
+      </div>
+
+      <div class="view-tabs" aria-label="Camera position">
+        <button data-camera="operator" class="active">Operator</button>
+        <button data-camera="wide">Wide</button>
+        <button data-camera="platform">Platform</button>
+      </div>
+
+      <div class="operations-strip">
+        <div><small>ENTRANCE</small><strong data-status="entrance">CLOSED</strong></div>
+        <div><small>QUEUE</small><strong><span data-telemetry="queue">18</span> GUESTS</strong></div>
+        <div><small>ON RIDE</small><strong><span data-telemetry="onboard">0</span> / 38</strong></div>
+        <div><small>THROUGHPUT</small><strong><span data-telemetry="throughput">0</span> PPH</strong></div>
+      </div>
+
+      <div class="viewport__hud viewport__hud--advanced">
+        <div><small>ARM POSITION</small><strong><span data-telemetry="arm">0.0</span>°</strong></div>
+        <div><small>GONDOLA</small><strong><span data-telemetry="rpm">0.0</span> RPM</strong></div>
+        <div><small>CYCLE TIME</small><strong data-telemetry="time">00:00</strong></div>
+        <div><small>FORCE</small><strong><span data-telemetry="gforce">1.0</span> G</strong></div>
+        <div><small>HAPPINESS</small><strong><span data-telemetry="happiness">62</span>%</strong></div>
+      </div>
+    </section>
+
+    <aside class="console">
+      <div class="console__top">
+        <div>
+          <small>SYSTEM STATE</small>
+          <strong id="state-label"><i></i> RIDE CLOSED</strong>
+        </div>
+        <div class="score">
+          <small>SESSION SCORE</small>
+          <strong id="score">0</strong>
+        </div>
+      </div>
+
+      <div id="message-display" class="message-display">
+        <span>SYS</span>
+        <p>Turn the control key to begin opening checks.</p>
+      </div>
+
+      <section class="panel-section passenger-section">
+        <h2>Guest operation <span>01</span></h2>
+        <div class="guest-summary">
+          <div><small>WAITING</small><strong data-telemetry="queue">18</strong></div>
+          <div><small>SEATED</small><strong><span data-telemetry="onboard">0</span>/38</strong></div>
+          <div><small>SERVED</small><strong data-telemetry="served">0</strong></div>
+          <div><small>CYCLES</small><strong data-telemetry="cycles">0</strong></div>
+        </div>
+        <div class="seat-map" id="seat-map" aria-label="Thirty-eight restraint circuits"></div>
+        <div class="challenge-strip" aria-label="Session challenges">
+          <span data-challenge="inversions3">3× FLIP</span>
+          <span data-challenge="inversions5">5× FLIP</span>
+          <span data-challenge="happy30">30s HAPPY</span>
+          <span data-challenge="gforce5">5.0 G</span>
+          <span data-challenge="served500">500 GUESTS</span>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h2>Safety circuits <span>02</span></h2>
+        <div class="annunciators annunciators--six">
+          <div data-lamp="power"><i></i>Control power</div>
+          <div data-lamp="gate"><i></i>Load gate closed</div>
+          <div data-lamp="restraints"><i></i>Restraints proved</div>
+          <div data-lamp="platform"><i></i>Platform clear</div>
+          <div data-lamp="brake"><i></i>Gondola brake</div>
+          <div data-lamp="drive"><i></i>Drive ready</div>
+          <div data-lamp="fault"><i></i>System fault</div>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h2>Public operation <span>03</span></h2>
+        <div class="control-row control-row--five">
+          <button class="panel-button panel-button--key" id="power">
+            <i></i><span>CONTROL KEY<small>OFF</small><kbd>K</kbd></span>
+          </button>
+          <button class="panel-button" id="ride-open">
+            <i></i><span>RIDE ENTRANCE<small>CLOSED</small><kbd>O</kbd></span>
+          </button>
+          <button class="panel-button" id="load-gate">
+            <i></i><span>LOAD GATE<small>CLOSED</small><kbd>G</kbd></span>
+          </button>
+          <button class="panel-button" id="restraints">
+            <i></i><span>RESTRAINTS<small>OPEN</small><kbd>R</kbd></span>
+          </button>
+          <button class="panel-button" id="platform">
+            <i></i><span>PLATFORM CHECK<small>NOT CLEAR</small><kbd>C</kbd></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h2>Top Spin motion control <span>04</span></h2>
+        <div class="mode-row">
+          <label class="speed-selector speed-selector--wide">
+            OPERATING MODE
+            <select id="program">
+              <option value="manual">Manual operation</option>
+              <option value="sequence1">Sequence 1 — Pendulum</option>
+              <option value="sequence2">Sequence 2 — Inversion</option>
+              <option value="sequence3">Sequence 3 — Extreme</option>
+            </select>
+          </label>
+          <button class="panel-button panel-button--drive" id="drive">
+            <i></i><span>MAIN DRIVE<small>DISABLED</small><kbd>D</kbd></span>
+          </button>
+          <button class="panel-button" id="water">
+            <i></i><span>WATER FX<small>ARMED</small><kbd>W</kbd></span>
+          </button>
+        </div>
+
+        <div class="manual-grid">
+          <button class="hold-button" id="arm-reverse">◀<span>ARM ANTI-CLOCKWISE</span><kbd>←</kbd></button>
+          <button class="system-button active" id="arm-lock"><i></i><span>ARM LOCK<small>ENGAGED</small></span><kbd>L</kbd></button>
+          <button class="hold-button" id="arm-forward">▶<span>ARM CLOCKWISE</span><kbd>→</kbd></button>
+          <button class="system-button active" id="gondola-brake"><i></i><span>GONDOLA BRAKE<small>APPLIED</small></span><kbd>B</kbd></button>
+          <button class="system-button system-button--stop" id="cycle-stop"><i></i><span>STOP / RETURN<small>SEQUENCE STOP</small></span><kbd>S</kbd></button>
+        </div>
+        <p class="panel-note">The gondola is free-swinging when its brake is released. Time brake capture against arm position to build pendulum motion and inversions.</p>
+      </section>
+
+      <section class="panel-section panel-section--dispatch">
+        <h2>Cycle control <span>05</span></h2>
+        <div class="dispatch-row">
+          <button id="reset" class="round-button round-button--blue"><i></i><span>FAULT<br>RESET</span><kbd>F</kbd></button>
+          <button id="dispatch" class="dispatch-button"><i></i><span>HOLD TO<br>DISPATCH</span><kbd>SPACE</kbd></button>
+          <button id="estop" class="estop"><i></i><span>EMERGENCY<br>STOP</span><kbd>E</kbd></button>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="toast-region" class="toasts" aria-live="polite"></div>
+
+  <dialog id="help-dialog" class="operating-manual">
+    <button id="help-close" aria-label="Close manual">×</button>
+    <p class="eyebrow">Toxicator operator manual</p>
+    <h2>From closed ride to dispatch</h2>
+    <ol>
+      <li>Press <kbd>K</kbd> for control power, then <kbd>O</kbd> to open the public entrance.</li>
+      <li>Press <kbd>G</kbd> to open the load gate. Guests board one seat at a time from the queue.</li>
+      <li>Close the gate with <kbd>G</kbd>, then press <kbd>R</kbd> and wait for every occupied restraint circuit to prove.</li>
+      <li>Confirm the platform with <kbd>C</kbd>, enable the drive with <kbd>D</kbd>, then hold <kbd>SPACE</kbd>.</li>
+      <li>For manual mode, release arm lock with <kbd>L</kbd>. Hold the arrow keys to drive the arms and press <kbd>B</kbd> to release or capture the free-swinging gondola.</li>
+      <li>Press <kbd>S</kbd> to finish. A manual cycle only completes when arms and gondola are upright, stationary and both locks are engaged.</li>
+      <li>Open restraints, then open the gate to unload. The next group boards automatically.</li>
+    </ol>
+    <h3>Keyboard commands</h3>
+    <div class="key-grid">
+      <span><kbd>K</kbd> Control key</span><span><kbd>O</kbd> Ride entrance</span>
+      <span><kbd>G</kbd> Load gate</span><span><kbd>R</kbd> Restraints</span>
+      <span><kbd>C</kbd> Platform clear</span><span><kbd>D</kbd> Main drive</span>
+      <span><kbd>←</kbd><kbd>→</kbd> Arm drive</span><span><kbd>B</kbd> Gondola brake</span>
+      <span><kbd>L</kbd> Arm lock</span><span><kbd>S</kbd> Stop / return</span>
+      <span><kbd>W</kbd> Water effects</span><span><kbd>1–4</kbd> Operating mode</span>
+      <span><kbd>SPACE</kbd> Dispatch</span><span><kbd>E</kbd> Emergency stop</span>
+      <span><kbd>F</kbd> Fault reset</span><span><kbd>V</kbd> Change camera</span>
+    </div>
+    <p>Automatic sequences control the arm drive and gondola brake for you. Manual mode scores more strongly for sustained happiness, controlled inversions and efficient throughput.</p>
+  </dialog>
+
+  <script type="module" src="js/simulator/main.js"></script>
+</body>
+</html>
