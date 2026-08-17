@@ -1,0 +1,5 @@
+const defaults={audio:true,reducedMotion:false,highContrast:false,volume:.55};
+export function loadSettings(){try{return{...defaults,...JSON.parse(localStorage.getItem('rideops:settings')||'{}')}}catch{return{...defaults}}}
+export function saveSettings(next){localStorage.setItem('rideops:settings',JSON.stringify(next));applySettings(next)}
+export function applySettings(settings=loadSettings()){document.body.classList.toggle('reduced-motion',settings.reducedMotion);document.body.classList.toggle('high-contrast',settings.highContrast)}
+export function initSettingsModal(){const modal=document.querySelector('#settings-modal');if(!modal)return;const settings=loadSettings();modal.querySelectorAll('[data-setting]').forEach(input=>{input.checked=Boolean(settings[input.dataset.setting]);input.addEventListener('change',()=>{settings[input.dataset.setting]=input.checked;saveSettings(settings)})});document.querySelectorAll('[data-settings-open]').forEach(b=>b.addEventListener('click',()=>modal.hidden=false));modal.querySelectorAll('[data-settings-close]').forEach(b=>b.addEventListener('click',()=>modal.hidden=true));applySettings(settings)}
