@@ -6,9 +6,9 @@ A desktop-first browser game foundation for realistic theme-park ride operation.
 
 The gondola begins empty. Energise the controls, open the ride entrance and then open the load gate to board guests from the queue. Close the gate, close and prove the occupied restraints, confirm the platform, enable the main arm drive and hold dispatch. At the end of a cycle, open the restraints and load gate to unload before accepting the next group.
 
-The manual mode models the defining Top Spin interaction: electric arm drive with an independently swinging gondola controlled by a brake. The gondola is not treated as a second powered motor. Automatic modes provide three original ride sequences.
+The manual mode models the defining Top Spin interaction: motor-driven arms move the gondola pivot while gravity, pivot acceleration and inertia drive the independently swinging gondola. A pressure-ramped hold brake captures the gondola relative to the arms; it is not treated as a second powered motor. Automatic modes provide three original ride sequences built from the same physics.
 
-Keyboard controls: `K` control key, `O` entrance, `G` load gate, `R` restraints, `C` platform clear, `D` drive enable, `Space` dispatch, arrow keys arm drive, `B` gondola brake, `L` arm lock, `S` stop/return, `W` water effects, `1`–`4` operating mode, `E` emergency stop and `F` fault reset.
+Keyboard controls: `K` control key, `O` entrance, `G` load gate, `R` restraints, `C` platform clear, `D` drive enable, `Space` dispatch, hold the arrow keys for arm drive, hold `B` for gondola brake pressure, `L` arm lock, `S` stop/return, `W` water effects, `1`–`4` operating mode, `E` emergency stop and `F` fault reset.
 
 ## Run locally
 

@@ -1,5 +1,5 @@
 import { RideController, STATES } from './state-machine.js';
-import { click, alarm } from '../services/audio.js';
+import { click, alarm, updateRideAudio } from '../services/audio.js';
 import { applySettings } from '../core/settings.js';
 
 applySettings();
@@ -63,10 +63,10 @@ controls.restraints.addEventListener('click', () => controller.toggleRestraints(
 controls.platformClear.addEventListener('click', () => controller.confirmPlatform());
 controls.drive.addEventListener('click', () => controller.toggleDrive());
 controls.water.addEventListener('click', () => controller.toggleWater());
-controls.gondolaBrake.addEventListener('click', () => controller.toggleGondolaBrake());
 controls.armLock.addEventListener('click', () => controller.toggleArmLock());
 controls.cycleStop.addEventListener('click', () => controller.requestCycleStop());
 q('#program').addEventListener('change', event => controller.setProgram(event.target.value));
+q('#arm-speed').addEventListener('change', event => controller.setArmSpeed(event.target.value));
 q('#reset').addEventListener('click', () => controller.resetFault());
 q('#estop').addEventListener('click', () => {
   alarm();
@@ -106,6 +106,22 @@ for (const [selector, command] of holdControls) {
   element.addEventListener('blur', end);
 }
 
+const brakeStart = event => {
+  event?.preventDefault();
+  if (event?.pointerId !== undefined) {
+    try { controls.gondolaBrake.setPointerCapture(event.pointerId); } catch { /* no pointer capture */ }
+  }
+  if (controller.setGondolaBrake(true, true)) controls.gondolaBrake.classList.add('pressed');
+};
+const brakeEnd = () => {
+  controller.setGondolaBrake(false, false);
+  controls.gondolaBrake.classList.remove('pressed');
+};
+controls.gondolaBrake.addEventListener('pointerdown', brakeStart);
+controls.gondolaBrake.addEventListener('pointerup', brakeEnd);
+controls.gondolaBrake.addEventListener('pointercancel', brakeEnd);
+controls.gondolaBrake.addEventListener('blur', brakeEnd);
+
 function selectCamera(name) {
   const buttons = qa('.view-tabs button');
   const next = buttons.find(button => button.dataset.camera === name) || buttons[0];
@@ -126,7 +142,6 @@ function keyboardAction(key) {
     case 'r': return controller.toggleRestraints();
     case 'c': return controller.confirmPlatform();
     case 'd': return controller.toggleDrive();
-    case 'b': return controller.toggleGondolaBrake();
     case 'l': return controller.toggleArmLock();
     case 's': return controller.requestCycleStop();
     case 'w': return controller.toggleWater();
@@ -151,6 +166,9 @@ document.addEventListener('keydown', event => {
   if (pressedKeys.has(key)) return;
   pressedKeys.add(key);
   if (key === ' ') controller.beginDispatch();
+  else if (key === 'b') {
+    if (controller.setGondolaBrake(true, true)) controls.gondolaBrake.classList.add('pressed');
+  }
   else if (key === 'arrowleft') {
     if (controller.hold('armReverse', true)) q('#arm-reverse').classList.add('pressed');
   } else if (key === 'arrowright') {
@@ -162,6 +180,10 @@ document.addEventListener('keyup', event => {
   const key = event.key.toLowerCase();
   pressedKeys.delete(key);
   if (key === ' ') controller.endDispatch();
+  if (key === 'b') {
+    controller.setGondolaBrake(false, false);
+    controls.gondolaBrake.classList.remove('pressed');
+  }
   if (key === 'arrowleft') {
     controller.hold('armReverse', false);
     q('#arm-reverse').classList.remove('pressed');
@@ -177,6 +199,8 @@ document.addEventListener('visibilitychange', () => {
   pressedKeys.clear();
   controller.hold('armReverse', false);
   controller.hold('armForward', false);
+  controller.setGondolaBrake(false, false);
+  controls.gondolaBrake.classList.remove('pressed');
   controller.endDispatch();
 });
 
@@ -211,13 +235,17 @@ function renderState(state, message, type) {
   setControlState(controls.platformClear, state.platformClear, state.platformClear ? 'CLEAR' : 'NOT CLEAR');
   setControlState(controls.drive, state.drive, state.drive ? 'ENABLED' : 'DISABLED');
   setControlState(controls.water, state.water, state.water ? 'ARMED' : 'DISABLED');
-  setControlState(controls.gondolaBrake, state.gondolaBrake, state.gondolaBrake ? 'APPLIED' : 'RELEASED');
+  const brakeLabel = state.brakePressure > 0.05
+    ? `${Math.round(state.brakePressure * 100)}% PRESSURE`
+    : 'RELEASED — FREE SWING';
+  setControlState(controls.gondolaBrake, state.gondolaBrake, brakeLabel);
   setControlState(controls.armLock, state.armLock, state.armLock ? 'ENGAGED' : 'RELEASED');
   setControlState(controls.cycleStop, state.cycleStopRequested, state.cycleStopRequested ? 'RETURN REQUESTED' : 'SEQUENCE STOP');
 
   dispatch.classList.toggle('ready', controller.canDispatch);
   q('#estop').classList.toggle('latched', state.estop);
   q('#program').disabled = moving;
+  q('#arm-speed').disabled = moving;
   qa('#arm-forward,#arm-reverse,#arm-lock,#gondola-brake').forEach(element => {
     element.classList.toggle('inhibited', state.program !== 'manual' || state.mode !== STATES.RUNNING);
   });
@@ -256,6 +284,8 @@ function renderTelemetry(state) {
   q('[data-telemetry="throughput"]').textContent = state.throughput;
   q('[data-telemetry="arm"]').textContent = state.arm.toFixed(1);
   q('[data-telemetry="rpm"]').textContent = Math.abs(state.rpm).toFixed(1);
+  q('[data-telemetry="relative"]').textContent = state.relativeGondolaAngle.toFixed(0);
+  q('[data-telemetry="brake"]').textContent = Math.round(state.brakePressure * 100);
   q('[data-telemetry="time"]').textContent = `${String(Math.floor(state.cycleElapsed / 60)).padStart(2, '0')}:${String(Math.floor(state.cycleElapsed % 60)).padStart(2, '0')}`;
   q('[data-telemetry="gforce"]').textContent = state.currentG.toFixed(1);
   q('[data-telemetry="happiness"]').textContent = Math.round(state.happiness);
@@ -298,7 +328,9 @@ function frame(now) {
   const dt = Math.min(0.05, (now - previousFrame) / 1000);
   previousFrame = now;
   controller.tick(dt);
-  scene?.update(controller.snapshot(), dt);
+  const snapshot = controller.snapshot();
+  scene?.update(snapshot, dt);
+  updateRideAudio(snapshot);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

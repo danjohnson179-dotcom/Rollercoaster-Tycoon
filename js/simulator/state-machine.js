@@ -20,6 +20,10 @@ export const PROGRAMS = Object.freeze({
 
 const CAPACITY = 38;
 const DEG = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
+const GRAVITY = 9.81;
+const ARM_RADIUS = 6.05;
+const GONDOLA_COM_OFFSET = 1.38;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const approach = (value, target, amount) => value + clamp(target - value, -amount, amount);
 const wrappedAngle = value => ((value + 180) % 360 + 360) % 360 - 180;
@@ -73,7 +77,9 @@ export class RideController extends EventTarget {
       estop: false,
       fault: false,
       gondolaBrake: true,
+      brakePressure: 1,
       armLock: true,
+      armSpeedSetpoint: 0.72,
       armAngle: 0,
       armVelocity: 0,
       gondolaAngle: 0,
@@ -112,6 +118,7 @@ export class RideController extends EventTarget {
     this.brakeOffset = 0;
     this.previousInversionBand = 0;
     this.lastArmVelocity = 0;
+    this.lastArmAcceleration = 0;
   }
 
   snapshot() {
@@ -120,6 +127,7 @@ export class RideController extends EventTarget {
       ...s,
       arm: wrappedAngle(s.armAngle),
       rpm: s.gondolaVelocity / 6,
+      relativeGondolaAngle: wrappedAngle(s.gondolaAngle - s.armAngle),
       capacity: CAPACITY,
       programmeLabel: PROGRAMS[s.program].label,
       safeAtLoad: this.safeAtLoad
@@ -303,16 +311,29 @@ export class RideController extends EventTarget {
     return true;
   }
 
-  toggleGondolaBrake() {
+  setGondolaBrake(active, announce = false) {
     const s = this.state;
     if (s.mode !== STATES.RUNNING || s.program !== 'manual') {
+      if (!active) {
+        this.applyBrake(true);
+        return true;
+      }
       return this.reject('Gondola brake control is available during a manual cycle only.');
     }
-    s.gondolaBrake = !s.gondolaBrake;
-    if (s.gondolaBrake) this.brakeOffset = s.gondolaAngle - s.armAngle;
-    this.emit(s.gondolaBrake
-      ? 'Gondola brake applied. Gondola is being captured to the arms.'
-      : 'Gondola brake released. Gondola is now free-swinging.');
+    this.applyBrake(Boolean(active));
+    if (announce) this.emit(active
+      ? 'Gondola brake paddle held. Calipers are applying.'
+      : 'Gondola brake paddle released. Gondola is free-swinging.');
+    return true;
+  }
+
+  setArmSpeed(value) {
+    const s = this.state;
+    if ([STATES.RUNNING, STATES.RETURNING].includes(s.mode)) {
+      return this.reject('Arm speed selection is locked during a cycle.', 2);
+    }
+    s.armSpeedSetpoint = clamp(Number(value) || 0.72, 0.42, 1);
+    this.emit(`Arm drive speed set to ${Math.round(s.armSpeedSetpoint * 100)}%.`);
     return true;
   }
 
@@ -369,6 +390,8 @@ export class RideController extends EventTarget {
     if (s.program !== 'manual') {
       s.armLock = false;
       this.applyBrake(true);
+    } else {
+      this.applyBrake(false);
     }
     this.emit(s.program === 'manual'
       ? 'Manual cycle started. Release ARM LOCK, drive the arms and time the GONDOLA BRAKE.'
@@ -516,7 +539,7 @@ export class RideController extends EventTarget {
           if (this.holds.has('armForward')) armCommand += 1;
           if (this.holds.has('armReverse')) armCommand -= 1;
         }
-        targetSpeed = armCommand * 31;
+        targetSpeed = armCommand * (18 + s.armSpeedSetpoint * 23);
         if (s.cycleElapsed >= PROGRAMS.manual.duration) {
           s.mode = STATES.RETURNING;
           this.emit('Maximum manual cycle time reached. Service return engaged.', 'error');
@@ -527,7 +550,7 @@ export class RideController extends EventTarget {
           s.mode = STATES.RETURNING;
           this.emit('Programme complete. Returning the gondola to load position.');
         } else {
-          targetSpeed = command.arm * (18 + PROGRAMS[s.program].intensity * 5);
+          targetSpeed = command.arm * (17 + PROGRAMS[s.program].intensity * 4.5);
           s.armLock = command.arm === 0;
           this.applyBrake(command.brake);
         }
@@ -540,12 +563,14 @@ export class RideController extends EventTarget {
       targetSpeed = Math.abs(error) < 0.35 ? 0 : clamp(error * 0.85, -22, 22);
       s.armLock = false;
       this.applyBrake(false);
-      s.gondolaVelocity += (target - s.gondolaAngle) * dt * 1.9;
-      s.gondolaVelocity *= Math.max(0, 1 - dt * 1.15);
+      const gondolaTarget = Math.round(s.gondolaAngle / 360) * 360;
+      const gondolaError = gondolaTarget - s.gondolaAngle;
+      const serviceAccel = clamp(gondolaError * 2.2 - s.gondolaVelocity * 1.45, -85, 85);
+      s.gondolaVelocity += serviceAccel * dt;
       if (Math.abs(error) < 0.65 && Math.abs(s.armVelocity) < 1.5
-        && Math.abs(target - s.gondolaAngle) < 2 && Math.abs(s.gondolaVelocity) < 2.5) {
+        && Math.abs(gondolaTarget - s.gondolaAngle) < 2 && Math.abs(s.gondolaVelocity) < 2.5) {
         s.armAngle = target;
-        s.gondolaAngle = target;
+        s.gondolaAngle = gondolaTarget;
         s.armVelocity = 0;
         s.gondolaVelocity = 0;
         s.armLock = true;
@@ -559,26 +584,45 @@ export class RideController extends EventTarget {
     if (![STATES.RUNNING, STATES.RETURNING].includes(s.mode)) targetSpeed = 0;
     if (s.fault || s.estop || s.armLock) targetSpeed = 0;
 
-    const acceleration = Math.abs(targetSpeed) > Math.abs(s.armVelocity) ? 38 : 55;
+    const acceleration = Math.abs(targetSpeed) > Math.abs(s.armVelocity) ? 31 : 47;
     s.armVelocity = approach(s.armVelocity, targetSpeed, acceleration * dt);
     const oldArm = s.armAngle;
     s.armAngle += s.armVelocity * dt;
     const armDelta = s.armAngle - oldArm;
     const armAcceleration = (s.armVelocity - this.lastArmVelocity) / Math.max(dt, 0.001);
     this.lastArmVelocity = s.armVelocity;
+    this.lastArmAcceleration = armAcceleration;
 
-    if (s.gondolaBrake) {
-      const targetGondola = s.armAngle + this.brakeOffset;
-      const capture = Math.min(1, dt * 7.5);
-      s.gondolaVelocity += (s.armVelocity - s.gondolaVelocity) * capture;
-      s.gondolaAngle += s.gondolaVelocity * dt;
-      s.gondolaAngle += (targetGondola - s.gondolaAngle) * capture;
+    // A Top Spin gondola is a pendulum mounted to a motor-driven moving pivot.
+    // Integrate that mechanism in SI units, then expose degrees to the UI/scene.
+    const alpha = s.armAngle * DEG;
+    const alphaVelocity = s.armVelocity * DEG;
+    const alphaAcceleration = armAcceleration * DEG;
+    let theta = s.gondolaAngle * DEG;
+    let thetaVelocity = s.gondolaVelocity * DEG;
+    const pivotAccelerationZ = ARM_RADIUS * (Math.sin(alpha) * alphaVelocity ** 2 - Math.cos(alpha) * alphaAcceleration);
+    const pivotAccelerationY = ARM_RADIUS * (Math.cos(alpha) * alphaVelocity ** 2 + Math.sin(alpha) * alphaAcceleration);
+    let thetaAcceleration = (-GRAVITY * Math.sin(theta)
+      + pivotAccelerationZ * Math.cos(theta)
+      - pivotAccelerationY * Math.sin(theta)) / GONDOLA_COM_OFFSET;
+    thetaAcceleration -= thetaVelocity * 0.085;
+
+    const pressureTarget = s.gondolaBrake ? 1 : 0;
+    s.brakePressure = approach(s.brakePressure, pressureTarget, dt * (s.gondolaBrake ? 3.8 : 6.5));
+    if (s.brakePressure > 0.001) {
+      const relativeAngle = wrappedAngle((s.gondolaAngle - s.armAngle) - this.brakeOffset) * DEG;
+      const relativeVelocity = thetaVelocity - alphaVelocity;
+      const caliperAcceleration = clamp(-relativeAngle * 27 - relativeVelocity * 10.5, -21, 21);
+      thetaAcceleration += caliperAcceleration * s.brakePressure;
+    }
+
+    if (s.mode !== STATES.RETURNING) {
+      thetaVelocity += thetaAcceleration * dt;
+      thetaVelocity = clamp(thetaVelocity, -4.9, 4.9);
+      theta += thetaVelocity * dt;
+      s.gondolaVelocity = thetaVelocity * RAD_TO_DEG;
+      s.gondolaAngle = theta * RAD_TO_DEG;
     } else {
-      const gravityAcceleration = -Math.sin(s.gondolaAngle * DEG) * 118;
-      const driveCoupling = -armAcceleration * 0.42 * Math.cos((s.gondolaAngle - s.armAngle) * DEG);
-      const aerodynamicDrag = -s.gondolaVelocity * 0.105;
-      s.gondolaVelocity += (gravityAcceleration + driveCoupling + aerodynamicDrag) * dt;
-      s.gondolaVelocity = clamp(s.gondolaVelocity, -240, 240);
       s.gondolaAngle += s.gondolaVelocity * dt;
     }
 
@@ -588,16 +632,20 @@ export class RideController extends EventTarget {
     }
 
     if (s.mode === STATES.RUNNING) {
-      this.updateRideMetrics(dt, armDelta);
+      this.updateRideMetrics(dt, armDelta, pivotAccelerationY, pivotAccelerationZ, thetaAcceleration);
       if (s.program === 'manual' && s.cycleStopRequested && this.safeAtLoad) this.completeCycle();
     }
   }
 
-  updateRideMetrics(dt, armDelta) {
+  updateRideMetrics(dt, armDelta, pivotAccelerationY, pivotAccelerationZ, thetaAcceleration) {
     const s = this.state;
-    const angularSpeed = Math.abs(s.gondolaVelocity) * DEG;
-    const armSpeed = Math.abs(s.armVelocity) * DEG;
-    s.currentG = clamp(1 + angularSpeed * angularSpeed * 0.24 + armSpeed * armSpeed * 0.6, 0, 6.2);
+    const theta = s.gondolaAngle * DEG;
+    const omega = s.gondolaVelocity * DEG;
+    const relativeAccelerationZ = GONDOLA_COM_OFFSET * (Math.sin(theta) * omega ** 2 - Math.cos(theta) * thetaAcceleration);
+    const relativeAccelerationY = GONDOLA_COM_OFFSET * (Math.cos(theta) * omega ** 2 + Math.sin(theta) * thetaAcceleration);
+    const specificZ = pivotAccelerationZ + relativeAccelerationZ;
+    const specificY = pivotAccelerationY + relativeAccelerationY + GRAVITY;
+    s.currentG = clamp(Math.hypot(specificZ, specificY) / GRAVITY, 0, 6.2);
     s.maxG = Math.max(s.maxG, s.currentG);
     s.achievements.gforce5 ||= s.currentG >= 5;
 

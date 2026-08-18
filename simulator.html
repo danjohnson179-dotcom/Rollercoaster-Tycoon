@@ -58,6 +58,8 @@
       <div class="viewport__hud viewport__hud--advanced">
         <div><small>ARM POSITION</small><strong><span data-telemetry="arm">0.0</span>°</strong></div>
         <div><small>GONDOLA</small><strong><span data-telemetry="rpm">0.0</span> RPM</strong></div>
+        <div><small>RELATIVE ANGLE</small><strong><span data-telemetry="relative">0</span>°</strong></div>
+        <div><small>BRAKE</small><strong><span data-telemetry="brake">100</span>%</strong></div>
         <div><small>CYCLE TIME</small><strong data-telemetry="time">00:00</strong></div>
         <div><small>FORCE</small><strong><span data-telemetry="gforce">1.0</span> G</strong></div>
         <div><small>HAPPINESS</small><strong><span data-telemetry="happiness">62</span>%</strong></div>
@@ -145,6 +147,16 @@
               <option value="sequence3">Sequence 3 — Extreme</option>
             </select>
           </label>
+          <label class="speed-selector">
+            ARM SPEED
+            <select id="arm-speed">
+              <option value="0.42">42% — Setup</option>
+              <option value="0.58">58% — Low</option>
+              <option value="0.72" selected>72% — Normal</option>
+              <option value="0.86">86% — High</option>
+              <option value="1">100% — Full</option>
+            </select>
+          </label>
           <button class="panel-button panel-button--drive" id="drive">
             <i></i><span>MAIN DRIVE<small>DISABLED</small><kbd>D</kbd></span>
           </button>
@@ -157,10 +169,10 @@
           <button class="hold-button" id="arm-reverse">◀<span>ARM ANTI-CLOCKWISE</span><kbd>←</kbd></button>
           <button class="system-button active" id="arm-lock"><i></i><span>ARM LOCK<small>ENGAGED</small></span><kbd>L</kbd></button>
           <button class="hold-button" id="arm-forward">▶<span>ARM CLOCKWISE</span><kbd>→</kbd></button>
-          <button class="system-button active" id="gondola-brake"><i></i><span>GONDOLA BRAKE<small>APPLIED</small></span><kbd>B</kbd></button>
+          <button class="system-button active brake-paddle" id="gondola-brake"><i></i><span>HOLD GONDOLA BRAKE<small>100% PRESSURE</small></span><kbd>B</kbd></button>
           <button class="system-button system-button--stop" id="cycle-stop"><i></i><span>STOP / RETURN<small>SEQUENCE STOP</small></span><kbd>S</kbd></button>
         </div>
-        <p class="panel-note">The gondola is free-swinging when its brake is released. Time brake capture against arm position to build pendulum motion and inversions.</p>
+        <p class="panel-note">The gondola is free-swinging. Hold the brake paddle to build caliper pressure and capture its position relative to the arms; release it to let gravity and movement of the arm pivots develop the swing.</p>
       </section>
 
       <section class="panel-section panel-section--dispatch">
@@ -185,7 +197,7 @@
       <li>Press <kbd>G</kbd> to open the load gate. Guests board one seat at a time from the queue.</li>
       <li>Close the gate with <kbd>G</kbd>, then press <kbd>R</kbd> and wait for every occupied restraint circuit to prove.</li>
       <li>Confirm the platform with <kbd>C</kbd>, enable the drive with <kbd>D</kbd>, then hold <kbd>SPACE</kbd>.</li>
-      <li>For manual mode, release arm lock with <kbd>L</kbd>. Hold the arrow keys to drive the arms and press <kbd>B</kbd> to release or capture the free-swinging gondola.</li>
+      <li>For manual mode, release arm lock with <kbd>L</kbd>. Hold the arrow keys to drive the arms. Hold <kbd>B</kbd> to apply the gondola brake; release <kbd>B</kbd> for free swing.</li>
       <li>Press <kbd>S</kbd> to finish. A manual cycle only completes when arms and gondola are upright, stationary and both locks are engaged.</li>
       <li>Open restraints, then open the gate to unload. The next group boards automatically.</li>
     </ol>
@@ -194,7 +206,7 @@
       <span><kbd>K</kbd> Control key</span><span><kbd>O</kbd> Ride entrance</span>
       <span><kbd>G</kbd> Load gate</span><span><kbd>R</kbd> Restraints</span>
       <span><kbd>C</kbd> Platform clear</span><span><kbd>D</kbd> Main drive</span>
-      <span><kbd>←</kbd><kbd>→</kbd> Arm drive</span><span><kbd>B</kbd> Gondola brake</span>
+      <span><kbd>←</kbd><kbd>→</kbd> Hold arm drive</span><span><kbd>B</kbd> Hold gondola brake</span>
       <span><kbd>L</kbd> Arm lock</span><span><kbd>S</kbd> Stop / return</span>
       <span><kbd>W</kbd> Water effects</span><span><kbd>1–4</kbd> Operating mode</span>
       <span><kbd>SPACE</kbd> Dispatch</span><span><kbd>E</kbd> Emergency stop</span>
