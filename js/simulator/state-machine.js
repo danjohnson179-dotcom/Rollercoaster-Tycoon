@@ -257,7 +257,12 @@ export class RideController extends EventTarget {
 
   get canDispatch() {
     const s = this.state;
-    return Object.values(this.safetyCircuits).every(Boolean)
+    return s.power
+      && !s.loadGate
+      && s.restraints
+      && s.restraintProved
+      && !s.fault
+      && !s.estop
       && (s.onboard > 0 || s.testMode)
       && this.safeAtLoad
       && s.mode !== STATES.RUNNING
@@ -343,29 +348,30 @@ export class RideController extends EventTarget {
     const s = this.state;
     if (!s.power) return this.reject('Control power is required.');
     if (!this.safeAtLoad) return this.reject('Load gate is inhibited until the ride is locked at load position.');
-    if (s.drive) return this.reject('Disable the main drive before opening the load gate.');
     if (s.restraints || s.restraintProgress > 0.02) {
       return this.reject('Open the restraints before operating the load gate.');
     }
     if (s.loadGate && this.guestFlow.gateTransferActive) {
       return this.reject(`${s.platformGuests} guest${s.platformGuests === 1 ? ' is' : 's are'} still moving through the platform.`);
     }
-    if (!s.loadGate && !s.rideOpen && s.queue === 0 && !s.needsUnload && !s.testMode) {
-      return this.reject('There are no waiting guests to load. Open the queue entrance first.');
-    }
     s.loadGate = !s.loadGate;
     s.platformClear = false;
     if (s.loadGate) {
       s.mode = s.needsUnload && s.onboard > 0 ? STATES.UNLOADING : STATES.BOARDING;
       if (!s.needsUnload && s.onboard === 0) s.loadBatchCommitted = false;
-      this.emit(s.mode === STATES.UNLOADING
-        ? 'Load gate opened. Guests are leaving the gondola.'
-        : 'Load gate opened. Platform ready — press ADMIT NEXT BATCH when you want guests to board.');
+      if (s.mode === STATES.UNLOADING) {
+        this.emit('Gates opened. Guests are leaving the gondola.');
+      } else {
+        const load = this.guestFlow.requestLoad(s, this.safeAtLoad);
+        this.emit(load.ok
+          ? `Gates opened. ${load.batchSize} waiting guests are boarding.`
+          : 'Gates opened. Waiting for guests.');
+      }
     } else {
       this.updateMode();
       this.emit(s.onboard > 0
-        ? 'Load gate closed. Close and prove all restraints.'
-        : 'Load gate closed. Platform transfer secured.');
+        ? 'Gates closed. Close the restraints, then dispatch.'
+        : 'Gates closed.');
     }
     return true;
   }
@@ -444,6 +450,13 @@ export class RideController extends EventTarget {
     return true;
   }
 
+  setWaterActive(active, announce = false) {
+    if (active && !this.state.power) return this.reject('Turn the power on before using the fountains.', 2);
+    this.waterSystem.setMaster(this.state, Boolean(active));
+    if (announce) this.emit(`Fountains ${active ? 'ON' : 'OFF'}.`);
+    return true;
+  }
+
   setWaterMode(mode) {
     if (!this.waterSystem.setMode(this.state, mode)) return false;
     this.emit(`Aquafun pattern set to ${mode}.`);
@@ -507,13 +520,25 @@ export class RideController extends EventTarget {
     return true;
   }
 
+  syncManualBrake() {
+    const s = this.state;
+    if (s.mode !== STATES.RUNNING || s.program !== 'manual') return;
+    const mode = this.holds.has('brakeFull')
+      ? 'FULL'
+      : this.holds.has('brakeHalf') ? 'HALF' : 'RELEASED';
+    this.physics.setBrakeMode(s, mode);
+  }
+
   hold(control, active) {
     const s = this.state;
     if (active && (s.mode !== STATES.RUNNING || s.program !== 'manual')) {
       return this.reject('Manual arm commands require an active manual cycle.', 2);
     }
-    if (active && s.armLock) return this.reject('Release the arm lock before commanding movement.', 2);
+    if (active && s.armLock && ['armForward', 'armReverse'].includes(control)) {
+      return this.reject('The arms are parked. Start a manual cycle first.', 2);
+    }
     active ? this.holds.add(control) : this.holds.delete(control);
+    if (control === 'brakeFull' || control === 'brakeHalf') this.syncManualBrake();
     return true;
   }
 
@@ -532,7 +557,7 @@ export class RideController extends EventTarget {
     if (!this.dispatchStarted) return false;
     const held = performance.now() - this.dispatchStarted;
     this.dispatchStarted = 0;
-    if (held < 750) return this.reject('Dispatch released too early. Hold for the full validation period.');
+    if (held < 450) return this.reject('Keep holding DISPATCH until the green confirmation completes.');
     if (!this.canDispatch) return this.reject('Dispatch interrupted by an open interlock.');
     const s = this.state;
     s.mode = STATES.RUNNING;
@@ -542,15 +567,19 @@ export class RideController extends EventTarget {
     s.continuousInversions = 0;
     s.maxG = 1;
     s.happiness = 62;
+    s.drive = true;
+    s.platformClear = true;
+    this.holds.clear();
     this.previousInversionBand = Math.floor((s.gondolaAngle + 180) / 360);
     if (s.program !== 'manual') {
       s.armLock = false;
       this.applyBrake(true);
     } else {
-      this.applyBrake('FULL');
+      s.armLock = false;
+      this.applyBrake('RELEASED');
     }
     this.emit(s.program === 'manual'
-      ? 'Manual cycle started. Release ARM LOCK, drive the arms, then use RELEASED / HALF / FULL gondola braking.'
+      ? 'Manual cycle started. Drive the arms and hold HALF or FULL brake only when you need it.'
       : `${PROGRAMS[s.program].label} started. Sequence controller has command.`);
     return true;
   }
@@ -753,6 +782,11 @@ export class RideController extends EventTarget {
 
   tickGuests(dt) {
     this.guestFlow.tick(this.state, dt, this.safeAtLoad);
+    const s = this.state;
+    if (s.loadGate && this.safeAtLoad && !s.testMode && !s.needsUnload
+      && !s.loadBatchCommitted && s.queue > 0) {
+      this.guestFlow.requestLoad(s, this.safeAtLoad);
+    }
     if (this.state.loadGate) {
       this.state.mode = this.state.needsUnload || this.state.unloadingCount > 0
         ? STATES.UNLOADING
@@ -782,6 +816,7 @@ export class RideController extends EventTarget {
     if (s.mode === STATES.RUNNING) {
       s.cycleElapsed += safeDt;
       if (s.program === 'manual') {
+        this.syncManualBrake();
         let armCommand = 0;
         if (!s.armLock) {
           if (this.holds.has('armForward')) armCommand += 1;

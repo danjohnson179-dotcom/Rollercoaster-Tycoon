@@ -18,7 +18,8 @@ Rollercoaster-Operator-Sim/
 │       ├── three.core.min.js
 │       └── three.module.min.js
 ├── css/
-│   └── main.css
+│   ├── main.css
+│   └── simulator.css
 ├── js/
 │   ├── app.js
 │   ├── auth-page.js

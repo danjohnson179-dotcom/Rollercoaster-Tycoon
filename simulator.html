@@ -2,383 +2,131 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <meta name="theme-color" content="#090c10">
-  <title>Toxicator Operations // RideOps</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071116">
+  <title>Toxicator Simulator // RideOps</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/simulator.css?v=10">
 </head>
-<body class="sim-page">
-  <div id="sim-loader" class="loader">
-    <div class="loader__mark">TX</div>
-    <div class="loader__track"><i></i></div>
-    <span id="load-status">Loading Top Spin systems</span>
+<body class="simulator-page simulator-simple">
+  <div id="sim-loader" class="sim-loader">
+    <span class="brand__icon">RO</span><strong>LOADING TOXICATOR</strong><i></i>
+    <small id="load-status">Building ride environment</small>
   </div>
 
-  <header class="sim-header">
-    <a class="brand" href="catalogue.html">
-      <span class="brand__icon">RO</span>
-      <span>RIDE<strong>OPS</strong></span>
-    </a>
-    <span class="sim-header__divider"></span>
-    <div>
-      <small>ATTRACTION</small>
-      <strong>TOXICATOR / SUSPENDED TOP SPIN</strong>
-    </div>
-    <div class="sim-header__right">
-      <span id="clock">00:00:00</span>
-      <button class="icon-button" id="help-button" aria-label="Open operating manual">?</button>
-      <a class="icon-button" href="catalogue.html" aria-label="Exit simulator">×</a>
-    </div>
+  <header class="rs-header">
+    <a class="brand" href="index.html"><span class="brand__icon">RO</span><span>RIDE<strong>OPS</strong></span></a>
+    <div class="rs-attraction"><small>ATTRACTION</small><strong>TOXICATOR / TOP SPIN</strong></div>
+    <div class="rs-state" id="state-label"><i></i><span>RIDE CLOSED</span></div>
+    <div class="rs-clock" id="clock">00:00:00</div>
+    <button class="rs-icon" id="help-button" aria-label="Open controls">?</button>
+    <a class="rs-icon" href="catalogue.html" aria-label="Exit simulator">×</a>
   </header>
 
-  <main class="sim-layout">
-    <section class="viewport">
-      <canvas id="ride-canvas"></canvas>
-      <div id="webgl-error" class="webgl-error" hidden>
-        <strong>3D view unavailable</strong>
-        <span>The control simulation remains operational.</span>
-      </div>
+  <main class="rs-game">
+    <section class="rs-stage">
+      <canvas id="ride-canvas" aria-label="Interactive 3D view of the Toxicator Top Spin"></canvas>
+      <div id="webgl-error" class="webgl-error" hidden><h2>3D view unavailable</h2><p>The controls remain operational. Enable hardware acceleration and reload for the ride view.</p></div>
 
-      <div class="view-tabs" aria-label="Camera position">
-        <button data-camera="operator" class="active">Operator</button>
-        <button data-camera="wide">Wide</button>
-        <button data-camera="platform">Platform</button>
-      </div>
+      <nav class="rs-cameras" aria-label="Camera view">
+        <button class="active" data-camera="operator">OPERATOR</button>
+        <button data-camera="wide">WIDE</button>
+        <button data-camera="platform">PLATFORM</button>
+      </nav>
 
-      <div class="operations-strip">
+      <div class="rs-hud">
         <div><small>ENTRANCE</small><strong data-status="entrance">CLOSED</strong></div>
-        <div><small>QUEUE</small><strong><span data-telemetry="queue">0</span> GUESTS</strong></div>
+        <div><small>QUEUE</small><strong><span data-telemetry="queue">0</span> PEEPS</strong></div>
         <div><small>ON RIDE</small><strong><span data-telemetry="onboard">0</span> / 38</strong></div>
         <div><small>THROUGHPUT</small><strong><span data-telemetry="throughput">0</span> PPH</strong></div>
+        <div class="rs-score"><small>SCORE</small><strong id="score">0</strong></div>
       </div>
 
-      <div class="viewport__hud viewport__hud--advanced">
-        <div><small>ARM POSITION</small><strong><span data-telemetry="arm">0.0</span>°</strong></div>
-        <div><small>GONDOLA</small><strong><span data-telemetry="rpm">0.0</span> RPM</strong></div>
-        <div><small>RELATIVE ANGLE</small><strong><span data-telemetry="relative">0</span>°</strong></div>
-        <div><small>BRAKE</small><strong><span data-telemetry="brake">100</span>%</strong></div>
-        <div><small>CYCLE TIME</small><strong data-telemetry="time">00:00</strong></div>
-        <div><small>FORCE</small><strong><span data-telemetry="gforce">1.0</span> G</strong></div>
-        <div><small>HAPPINESS</small><strong><span data-telemetry="happiness">62</span>%</strong></div>
+      <div class="rs-peeps"><span><small>PEEPS</small><strong><span data-telemetry="boarding">0</span> MOVING</strong></span><div id="seat-map" class="rs-seat-map" aria-label="38 gondola seats"></div></div>
+      <div id="message-display" class="rs-message"><b>SYS</b><p>Turn on the power to begin.</p></div>
+
+      <div class="rs-telemetry">
+        <span><small>ARM</small><strong><span data-telemetry="arm">0.0</span>°</strong></span>
+        <span><small>GONDOLA</small><strong><span data-telemetry="rpm">0.0</span> RPM</strong></span>
+        <span><small>BRAKE</small><strong><span data-telemetry="brake-mode">FULL</span></strong></span>
+        <span><small>TIME</small><strong data-telemetry="time">00:00</strong></span>
+        <span><small>FORCE</small><strong><span data-telemetry="gforce">1.0</span> G</strong></span>
+        <span><small>HAPPY</small><strong><span data-telemetry="happiness">62</span>%</strong></span>
       </div>
     </section>
 
-    <aside class="console">
-      <div class="console__top">
-        <div>
-          <small>SYSTEM STATE</small>
-          <strong id="state-label"><i></i> RIDE CLOSED</strong>
-        </div>
-        <div class="score">
-          <small>SESSION SCORE</small>
-          <strong id="score">0</strong>
-        </div>
+    <section class="rs-deck" aria-label="Toxicator operator controls">
+      <div class="rs-control-group rs-tools">
+        <h2>MENU</h2>
+        <button class="rs-control rs-control--blue" id="options-button"><span>⚙</span><strong>OPTIONS<small>CONTROLS</small></strong></button>
+        <button class="rs-control rs-control--blue" id="view-button"><span>⌕</span><strong>VIEW<small>CAMERA</small></strong><kbd>V</kbd></button>
       </div>
 
-      <div id="message-display" class="message-display">
-        <span>SYS</span>
-        <p>Turn the control key to begin opening checks.</p>
+      <div class="rs-control-group rs-system">
+        <h2>SYSTEM CONTROLS</h2>
+        <button class="rs-control rs-control--key" id="power"><i></i><strong>POWER<small>OFF</small></strong><kbd>K</kbd></button>
+        <button class="rs-control" id="ride-open"><i></i><strong>ENTRANCE<small>CLOSED</small></strong><kbd>O</kbd></button>
+        <button class="rs-control" id="load-gate"><i></i><strong>GATES<small>CLOSED</small></strong><kbd>G</kbd></button>
+        <button class="rs-control" id="restraints"><i></i><strong>RESTRAINTS<small>OPEN</small></strong><kbd>R</kbd></button>
       </div>
 
-      <nav class="console-tabs" aria-label="Operator console pages">
-        <button class="active" data-console-tab="operate"><span>01</span> Operation</button>
-        <button data-console-tab="motion"><span>02</span> Motion</button>
-        <button data-console-tab="maintenance"><span>03</span> Maintenance <i></i></button>
-      </nav>
+      <div class="rs-control-group rs-motion">
+        <h2>MANUAL RIDE CONTROLS <span>PRESS &amp; HOLD</span></h2>
+        <button class="rs-control rs-control--hold" id="arm-reverse"><span>◀</span><strong>ARM LEFT<small>HOLD</small></strong><kbd>←</kbd></button>
+        <button class="rs-control rs-control--hold" id="arm-forward"><span>▶</span><strong>ARM RIGHT<small>HOLD</small></strong><kbd>→</kbd></button>
+        <button class="rs-control rs-control--brake" id="brake-half"><i></i><strong>HALF BRAKE<small>HOLD / RELEASE</small></strong><kbd>X</kbd></button>
+        <button class="rs-control rs-control--brake" id="brake-full"><i></i><strong>FULL BRAKE<small>HOLD / RELEASE</small></strong><kbd>B</kbd></button>
+        <button class="rs-control rs-control--water" id="water"><span>≋</span><strong>FOUNTAINS<small>HOLD</small></strong><kbd>W</kbd></button>
+        <button class="rs-control rs-control--stop" id="cycle-stop"><span>■</span><strong>END CYCLE<small>RETURN TO LOAD</small></strong><kbd>S</kbd></button>
+      </div>
 
-      <section class="panel-section passenger-section" data-console-panel="operate">
-        <h2>Guest demand <span>01 / A</span></h2>
-        <div class="demand-control">
-          <label class="console-select">
-            CROWD MODEL
-            <select id="demand-mode">
-              <option value="dynamic">Dynamic park waves</option>
-              <option value="quiet">Quiet</option>
-              <option value="steady">Steady</option>
-              <option value="busy">Busy</option>
-              <option value="surge">Peak surge</option>
-            </select>
-          </label>
-          <div><small>DEMAND</small><strong data-telemetry="demand-level">CLOSED</strong></div>
-          <div><small>NEXT PARTY</small><strong data-telemetry="next-arrival">--</strong></div>
-          <div><small>NEXT WAVE</small><strong data-telemetry="next-wave">--</strong></div>
-        </div>
-        <div class="guest-summary">
-          <div><small>WAITING</small><strong data-telemetry="queue">0</strong></div>
-          <div><small>WALKING</small><strong data-telemetry="boarding">0</strong></div>
-          <div><small>SEATED</small><strong><span data-telemetry="onboard">0</span>/38</strong></div>
-          <div><small>SERVED</small><strong data-telemetry="served">0</strong></div>
-          <div><small>CYCLES</small><strong data-telemetry="cycles">0</strong></div>
-        </div>
-        <div class="guest-flow-strip" aria-label="Live guest flow">
-          <div><small>FLOW STATE</small><strong data-telemetry="guest-phase">QUEUE CLOSED</strong></div>
-          <i>→</i>
-          <div><small>BATCH</small><strong><span data-telemetry="batch-remaining">0</span> / <span data-telemetry="batch-target">0</span></strong></div>
-          <i>→</i>
-          <div><small>PLATFORM</small><strong data-telemetry="platform-guests">0</strong></div>
-          <i>→</i>
-          <div><small>UNLOADING</small><strong data-telemetry="unloading">0</strong></div>
-        </div>
-        <div class="seat-map" id="seat-map" aria-label="Thirty-eight restraint circuits"></div>
-        <div class="challenge-strip" aria-label="Session challenges">
-          <span data-challenge="inversions3">3× FLIP</span>
-          <span data-challenge="inversions4">4× FLIP</span>
-          <span data-challenge="inversions5">5× FLIP</span>
-          <span data-challenge="happy30">30s HAPPY</span>
-          <span data-challenge="gforce5">5.0 G</span>
-          <span data-challenge="served500">500 GUESTS</span>
-        </div>
-      </section>
-
-      <section class="panel-section" data-console-panel="operate">
-        <h2>Safety circuits <span>01 / B</span></h2>
-        <div class="annunciators annunciators--six">
-          <div data-lamp="power"><i></i>Control power</div>
-          <div data-lamp="gate"><i></i>Load gate closed</div>
-          <div data-lamp="restraints"><i></i>Restraints proved</div>
-          <div data-lamp="platform"><i></i>Platform clear</div>
-          <div data-lamp="brake"><i></i>Gondola brake</div>
-          <div data-lamp="drive"><i></i>Drive ready</div>
-          <div data-lamp="fault"><i></i>System fault</div>
-          <div data-lamp="test"><i></i>Empty test permit</div>
-          <div data-lamp="loadReady"><i></i>Load position</div>
-        </div>
-      </section>
-
-      <section class="panel-section" data-console-panel="operate">
-        <h2>Platform operation <span>01 / C</span></h2>
-        <div class="operation-permit">
-          <label class="console-select">
-            OPERATION PERMIT
-            <select id="operation-mode">
-              <option value="public">Public operation</option>
-              <option value="test">Empty test cycle</option>
-            </select>
-          </label>
-          <p id="operation-permit-note"><strong>PUBLIC</strong> Guests arrive only while the queue entrance is open.</p>
-        </div>
-        <button class="admit-batch" id="admit-batch">
-          <i></i><span>ADMIT NEXT BATCH<small>ONE CONTROLLED LOAD ONLY</small></span><kbd>A</kbd>
-        </button>
-        <div class="control-row control-row--five">
-          <button class="panel-button panel-button--key" id="power">
-            <i></i><span>CONTROL KEY<small>OFF</small><kbd>K</kbd></span>
-          </button>
-          <button class="panel-button" id="ride-open">
-            <i></i><span>QUEUE ENTRANCE<small>CLOSED</small><kbd>O</kbd></span>
-          </button>
-          <button class="panel-button" id="load-gate">
-            <i></i><span>LOAD GATE<small>CLOSED</small><kbd>G</kbd></span>
-          </button>
-          <button class="panel-button" id="restraints">
-            <i></i><span>RESTRAINTS<small>OPEN</small><kbd>R</kbd></span>
-          </button>
-          <button class="panel-button" id="platform">
-            <i></i><span>PLATFORM CHECK<small>NOT CLEAR</small><kbd>C</kbd></span>
-          </button>
-        </div>
-      </section>
-
-      <section class="panel-section motion-desk" data-console-panel="motion">
-        <h2>Operator drive desk <span>02 / LIVE</span></h2>
-        <div class="instrument-bank" aria-label="Live motion instruments">
-          <div><small>ARM POSITION</small><strong><span data-telemetry="arm-console">0.0</span>°</strong><i data-gauge="arm"></i></div>
-          <div><small>GONDOLA SPEED</small><strong><span data-telemetry="rpm-console">0.0</span> RPM</strong><i data-gauge="speed"></i></div>
-          <div><small>RELATIVE ANGLE</small><strong><span data-telemetry="relative-console">0</span>°</strong><i data-gauge="relative"></i></div>
-          <div><small>BRAKE PRESSURE</small><strong><span data-telemetry="brake-console">100</span>%</strong><i data-gauge="brake"></i></div>
-        </div>
-        <div class="motion-return-strip">
-          <div data-lamp="loadReady"><i></i><span>RETURN CONTROLLER<small data-telemetry="return-stage-compact">PARKED &amp; LOCKED</small></span></div>
-          <p><strong>END CYCLE:</strong> press <kbd>S</kbd> once for controlled braking, arm parking, gondola levelling and load proof.</p>
-        </div>
-        <div class="drive-config">
-          <label class="console-select">
-            OPERATING MODE
-            <select id="program">
-              <option value="manual">Manual operation</option>
-              <option value="sequence1">Sequence 1 — Pendulum</option>
-              <option value="sequence2">Sequence 2 — Inversion</option>
-              <option value="sequence3">Sequence 3 — Extreme</option>
-            </select>
-          </label>
-          <label class="console-select">
-            ARM DRIVE SPEED
-            <select id="arm-speed">
-              <option value="0.42">42% — Setup</option>
-              <option value="0.58">58% — Low</option>
-              <option value="0.72" selected>72% — Normal</option>
-              <option value="0.86">86% — High</option>
-              <option value="1">100% — Full</option>
-            </select>
-          </label>
-          <button class="panel-button panel-button--drive" id="drive">
-            <i></i><span>MAIN DRIVE<small>DISABLED</small><kbd>D</kbd></span>
-          </button>
-        </div>
-
-        <div class="physical-control-grid">
-          <fieldset class="arm-station">
-            <legend>ARM DRIVE</legend>
-            <div class="arm-paddles">
-              <button class="hold-button" id="arm-reverse">◀<span>ANTI-CLOCKWISE</span><kbd>←</kbd></button>
-              <button class="system-button active" id="arm-lock"><i></i><span>ARM PARK LOCK<small>ENGAGED</small></span><kbd>L</kbd></button>
-              <button class="hold-button" id="arm-forward">▶<span>CLOCKWISE</span><kbd>→</kbd></button>
-            </div>
-            <button class="return-button" id="cycle-stop"><i></i><span>CONTROLLED RETURN TO LOAD<small>PRESS ONCE — AUTOMATIC PARK</small></span><kbd>S</kbd></button>
-          </fieldset>
-
-          <fieldset class="brake-station">
-            <legend>GONDOLA BRAKE</legend>
-            <div class="brake-selector" role="group" aria-label="Gondola brake pressure selector">
-              <button id="brake-release" data-brake-mode="RELEASED"><i></i><span>RELEASED<small>FREE SWING</small></span><kbd>Z</kbd></button>
-              <button id="brake-half" data-brake-mode="HALF"><i></i><span>HALF<small>TRIM / DAMP</small></span><kbd>X</kbd></button>
-              <button id="brake-full" class="active" data-brake-mode="FULL"><i></i><span>FULL<small>CAPTURE</small></span><kbd>B</kbd></button>
-            </div>
-            <div class="brake-pressure-meter"><span>CALIPER PRESSURE</span><div><i id="brake-pressure-fill"></i></div><strong><span data-telemetry="brake-mode">FULL</span> / <span data-telemetry="brake-temp">22</span>°C</strong></div>
-            <p>HALF applies controllable friction without locking the gondola. FULL captures its current position relative to the arms.</p>
-          </fieldset>
-        </div>
-
-        <fieldset class="water-station">
-          <legend>AQUAFUN FOUNTAINS</legend>
-          <button class="water-master" id="water"><i></i><span>PUMP MASTER<small>STOPPED</small></span><kbd>W</kbd></button>
-          <label class="console-select">PATTERN
-            <select id="water-pattern">
-              <option value="CURTAIN">Curtain</option>
-              <option value="CHASE">Left / right chase</option>
-              <option value="ALTERNATE">Alternate banks</option>
-              <option value="PULSE">Pulse</option>
-              <option value="AUTO">Ride-synchronised auto</option>
-            </select>
-          </label>
-          <label class="water-height">JET HEIGHT <strong><span data-telemetry="water-height">64</span>%</strong>
-            <input id="water-height" type="range" min="0" max="100" value="64" step="2">
-          </label>
-          <div class="water-zones" aria-label="Fountain zones">
-            <button class="active" data-water-zone="left">LEFT</button>
-            <button class="active" data-water-zone="centre">CENTRE</button>
-            <button class="active" data-water-zone="right">RIGHT</button>
-          </div>
-          <div class="water-pressure"><small>PUMP PRESSURE</small><strong><span data-telemetry="water-pressure">0</span>%</strong></div>
-        </fieldset>
-        <div class="motion-footer-instruments">
-          <span>REL SPEED <strong><span data-telemetry="relative-rpm">0.0</span> RPM</strong></span>
-          <span>PHASE <strong data-telemetry="phase">BOTTOM</strong></span>
-          <span>FLIPS <strong data-telemetry="flips">0</strong></span>
-        </div>
-        <p class="manual-coach" id="manual-coach">Manual coach: lock the gondola to the moving arms, then release the brake to convert arm movement into free swing.</p>
-      </section>
-
-      <section class="panel-section maintenance-section" data-console-panel="maintenance">
-        <h2>Fault desk <span>03 / A</span></h2>
-        <div class="fault-display" id="fault-display">
-          <span>NO ACTIVE FAULT</span>
-          <strong data-telemetry="fault-name">All monitored systems normal</strong>
-          <small data-telemetry="fault-severity">SYSTEM AVAILABLE</small>
-        </div>
-        <div class="mechanic-summary">
-          <div><small>MECHANIC</small><strong data-telemetry="mechanic-status">STANDBY</strong></div>
-          <div><small>ETA</small><strong data-telemetry="mechanic-eta">--</strong></div>
-          <div><small>REPAIR</small><strong data-telemetry="repair-progress">0%</strong></div>
-        </div>
-        <div class="maintenance-actions">
-          <button class="service-button service-button--call" id="call-mechanic"><span>☎</span><strong>CALL MECHANIC<small>RADIO / CALL-OUT</small></strong><kbd>M</kbd></button>
-          <label class="console-select">
-            DIAGNOSIS
-            <select id="diagnosis-system">
-              <option value="platform">Platform / gates</option>
-              <option value="restraints">Restraint circuit</option>
-              <option value="drive">Arm drive / encoder</option>
-              <option value="brake">Gondola brake</option>
-              <option value="effects">Water effects</option>
-            </select>
-          </label>
-          <button class="service-button" id="diagnose"><span>⌁</span><strong>CONFIRM DIAGNOSIS<small>START REPAIR</small></strong></button>
-        </div>
-        <div class="repair-bar"><i id="repair-bar"></i></div>
-        <p class="panel-note">A safety fault latches the ride. Call the mechanic, diagnose the affected system, wait for repair, then use FAULT RESET. A wrong diagnosis costs session score.</p>
-      </section>
-
-      <section class="panel-section maintenance-section" data-console-panel="maintenance">
-        <h2>Reliability controls <span>03 / B</span></h2>
-        <div class="reliability-grid">
-          <label class="console-select">
-            RANDOM FAULT RATE
-            <select id="fault-rate">
-              <option value="off">Off</option>
-              <option value="low">Low</option>
-              <option value="normal" selected>Normal</option>
-              <option value="high">High / training</option>
-            </select>
-          </label>
-          <div><small>NEXT EXPOSURE</small><strong data-telemetry="next-fault">--</strong></div>
-        </div>
-        <div class="fault-injector">
-          <label class="console-select">
-            EMPTY-TEST FAULT INJECTION
-            <select id="fault-inject">
-              <option value="gate_sensor">Load-gate limit switch</option>
-              <option value="restraint_channel">Restraint prove channel</option>
-              <option value="arm_encoder">Arm encoder</option>
-              <option value="gondola_brake">Gondola brake pressure</option>
-              <option value="water_pressure">Water-effects pressure</option>
-            </select>
-          </label>
-          <button id="inject-fault">INJECT TRAINING FAULT</button>
-        </div>
-      </section>
-
-      <section class="panel-section panel-section--dispatch">
-        <h2>Master cycle control <span>LIVE</span></h2>
-        <div class="dispatch-row">
-          <button id="reset" class="round-button round-button--blue"><i></i><span>FAULT<br>RESET</span><kbd>F</kbd></button>
-          <button id="dispatch" class="dispatch-button"><i></i><span>HOLD TO<br>DISPATCH</span><kbd>SPACE</kbd></button>
-          <button id="estop" class="estop"><i></i><span>EMERGENCY<br>STOP</span><kbd>E</kbd></button>
-        </div>
-      </section>
-    </aside>
+      <div class="rs-control-group rs-dispatch-group">
+        <h2>CYCLE</h2>
+        <button id="dispatch" class="rs-dispatch"><i></i><strong>HOLD TO<br>DISPATCH</strong><kbd>SPACE</kbd></button>
+        <button id="estop" class="rs-estop"><i></i><strong>EMERGENCY<br>STOP</strong><kbd>E</kbd></button>
+      </div>
+    </section>
   </main>
 
-  <div id="toast-region" class="toasts" aria-live="polite"></div>
-
-  <dialog id="help-dialog" class="operating-manual">
-    <button id="help-close" aria-label="Close manual">×</button>
-    <p class="eyebrow">Toxicator operator manual</p>
-    <h2>From closed ride to dispatch</h2>
-    <ol>
-      <li>Press <kbd>K</kbd> for control power. Guests arrive gradually only after <kbd>O</kbd> opens the queue; demand rises and falls in park waves.</li>
-      <li>For an empty engineering run, select <strong>Empty test cycle</strong>. This closes the public queue and permits a dispatch with no riders.</li>
-      <li>Press <kbd>G</kbd> to open the load gate, then <kbd>A</kbd> to release exactly one waiting batch. New arrivals remain behind the batch gate for the next cycle.</li>
-      <li>Close the gate with <kbd>G</kbd>, then press <kbd>R</kbd> and wait for every occupied restraint circuit to prove.</li>
-      <li>Confirm the platform with <kbd>C</kbd>, enable the drive with <kbd>D</kbd>, then hold <kbd>SPACE</kbd>.</li>
-      <li>For manual mode, release arm lock with <kbd>L</kbd> and hold the arrow keys to drive the arms. Brake positions are persistent: <kbd>Z</kbd> RELEASED, <kbd>X</kbd> HALF and <kbd>B</kbd> FULL.</li>
-      <li>FULL captures the gondola relative to the arms. RELEASED gives a true free swing. HALF adds friction without locking, so it can calm an excessive swing or shape the next inversion.</li>
-      <li>Press <kbd>S</kbd> once to finish. The return controller brakes the ride, parks the arms, levels the gondola and proves the load locks automatically.</li>
-      <li>Open restraints, then open the gate to unload. Once the platform is clear, press <kbd>A</kbd> to admit the next batch when you are ready.</li>
-      <li>Aquafun can run while the ride is idle or moving: <kbd>W</kbd> starts the pump, <kbd>P</kbd> changes pattern and <kbd>[</kbd>/<kbd>]</kbd> adjusts jet height. The three zone isolators are on the motion desk.</li>
-      <li>When a fault latches, open <strong>Maintenance</strong> or press <kbd>M</kbd>. Call the mechanic, select the affected system, complete the repair, then press <kbd>F</kbd>.</li>
-    </ol>
-    <h3>Keyboard commands</h3>
-    <div class="key-grid">
-      <span><kbd>K</kbd> Control key</span><span><kbd>O</kbd> Queue entrance</span>
-      <span><kbd>G</kbd> Load gate</span><span><kbd>A</kbd> Admit one batch</span>
-      <span><kbd>R</kbd> Restraints</span><span><kbd>C</kbd> Platform clear</span>
-      <span><kbd>D</kbd> Main drive</span><span><kbd>←</kbd><kbd>→</kbd> Hold arm drive</span>
-      <span><kbd>Z</kbd> Brake released</span><span><kbd>X</kbd> Half brake</span>
-      <span><kbd>B</kbd> Full brake</span><span><kbd>L</kbd> Arm lock</span>
-      <span><kbd>S</kbd> Stop / return</span><span><kbd>W</kbd> Water pump</span>
-      <span><kbd>P</kbd> Fountain pattern</span><span><kbd>[</kbd><kbd>]</kbd> Jet height</span>
-      <span><kbd>1–4</kbd> Operating mode</span><span><kbd>SPACE</kbd> Dispatch</span>
-      <span><kbd>E</kbd> Emergency stop</span><span><kbd>F</kbd> Fault reset</span>
-      <span><kbd>V</kbd> Change camera</span><span><kbd>M</kbd> Call mechanic</span>
-      <span><kbd>T</kbd> Empty test permit</span>
+  <dialog id="options-dialog" class="rs-options">
+    <header><div><small>TOXICATOR</small><h2>OPTIONS &amp; CONTROLS</h2></div><button id="options-close" aria-label="Close options">×</button></header>
+    <div class="rs-options-grid">
+      <section>
+        <h3>GAMEPLAY</h3>
+        <label>OPERATION<select id="operation-mode"><option value="public">Public operation</option><option value="test">Empty test cycle</option></select></label>
+        <label>RIDE MODE<select id="program"><option value="manual">Manual — full control</option><option value="sequence1">Auto 1 — gentle</option><option value="sequence2">Auto 2 — inversion</option><option value="sequence3">Auto 3 — intense</option></select></label>
+        <label>ARM SPEED<select id="arm-speed"><option value="0.58">Low</option><option value="0.72" selected>Normal</option><option value="0.86">High</option><option value="1">Maximum</option></select></label>
+        <label>CROWD<select id="demand-mode"><option value="dynamic">Dynamic waves</option><option value="quiet">Quiet</option><option value="steady">Steady</option><option value="busy">Busy</option><option value="surge">Very busy</option></select></label>
+      </section>
+      <section>
+        <h3>FOUNTAINS</h3>
+        <label>PATTERN<select id="water-pattern"><option value="CURTAIN">Curtain</option><option value="CHASE">Chase</option><option value="ALTERNATE">Alternate</option><option value="PULSE">Pulse</option><option value="AUTO">Ride sync</option></select></label>
+        <label>HEIGHT <strong><span data-telemetry="water-height">64</span>%</strong><input id="water-height" type="range" min="20" max="100" value="64" step="2"></label>
+        <div class="rs-zone-buttons"><button class="active" data-water-zone="left">LEFT</button><button class="active" data-water-zone="centre">CENTRE</button><button class="active" data-water-zone="right">RIGHT</button></div>
+        <p>Pump pressure: <strong><span data-telemetry="water-pressure">0</span>%</strong></p>
+      </section>
+      <section class="rs-keyboard">
+        <h3>KEYBOARD</h3>
+        <p><kbd>K</kbd> Power <kbd>O</kbd> Entrance <kbd>G</kbd> Gates <kbd>R</kbd> Restraints</p>
+        <p><kbd>←</kbd><kbd>→</kbd> Hold arms <kbd>X</kbd> Hold half brake <kbd>B</kbd> Hold full brake</p>
+        <p><kbd>W</kbd> Hold fountains <kbd>S</kbd> End cycle <kbd>SPACE</kbd> Dispatch <kbd>E</kbd> E-stop</p>
+        <p><kbd>V</kbd> Camera <kbd>T</kbd> Empty test <kbd>M</kbd> Mechanic <kbd>F</kbd> Fault reset</p>
+        <div class="rs-tip"><strong>MANUAL RIDE TIP</strong><span>The gondola always swings freely. Move the arms to build momentum. Hold HALF to trim the swing or FULL to capture it, then release the key to let it swing again.</span></div>
+      </section>
+      <section class="rs-maintenance">
+        <h3>MAINTENANCE</h3>
+        <div id="fault-display"><small>STATUS</small><strong data-telemetry="fault-name">No active fault</strong><span data-telemetry="mechanic-status">STANDBY</span></div>
+        <label>RANDOM FAULTS<select id="fault-rate"><option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">Training</option></select></label>
+        <label>DIAGNOSIS<select id="diagnosis-system"><option value="platform">Platform / gates</option><option value="restraints">Restraints</option><option value="drive">Arm drive</option><option value="brake">Gondola brake</option><option value="effects">Fountains</option></select></label>
+        <div class="rs-maint-buttons"><button id="call-mechanic">CALL MECHANIC</button><button id="diagnose">DIAGNOSE</button><button id="reset">FAULT RESET</button></div>
+      </section>
     </div>
-    <p>Automatic sequences control the arm drive and gondola brake for you. Manual mode scores more strongly for sustained happiness, controlled inversions and efficient throughput.</p>
   </dialog>
 
+  <div id="toast-region" class="toasts" aria-live="polite"></div>
   <script type="module" src="js/simulator/main.js"></script>
 </body>
 </html>
