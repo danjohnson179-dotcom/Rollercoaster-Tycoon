@@ -1,3 +1,7 @@
+import { TopSpinPhysics } from './topspin-physics.js';
+import { GuestFlow } from './guest-flow.js';
+import { WaterSystem } from './water-system.js';
+
 export const STATES = Object.freeze({
   CLOSED: 'RIDE CLOSED',
   WAITING: 'WAITING FOR GUESTS',
@@ -26,13 +30,6 @@ export const FAULTS = Object.freeze({
   water_pressure: { label: 'Water-effects pump pressure low', system: 'effects', severity: 'SERVICE', repairTime: 12 }
 });
 
-const DEMAND_PROFILES = Object.freeze({
-  quiet: { label: 'QUIET', rate: 0.11, maxParty: 1 },
-  steady: { label: 'STEADY', rate: 0.27, maxParty: 2 },
-  busy: { label: 'BUSY', rate: 0.5, maxParty: 3 },
-  surge: { label: 'SURGE', rate: 0.82, maxParty: 4 }
-});
-
 const FAULT_INTERVALS = Object.freeze({
   off: [Infinity, Infinity],
   low: [150, 280],
@@ -42,10 +39,7 @@ const FAULT_INTERVALS = Object.freeze({
 
 const CAPACITY = 38;
 const DEG = Math.PI / 180;
-const RAD_TO_DEG = 180 / Math.PI;
 const GRAVITY = 9.81;
-const ARM_RADIUS = 6.05;
-const PHYSICAL_PENDULUM_LENGTH = 2.55;
 const RIDER_RADIUS = 1.32;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const approach = (value, target, amount) => value + clamp(target - value, -amount, amount);
@@ -53,34 +47,34 @@ const wrappedAngle = value => ((value + 180) % 360 + 360) % 360 - 180;
 
 const AUTO_SEQUENCES = Object.freeze({
   sequence1: [
-    { until: 8, arm: 1, brake: true },
-    { until: 16, arm: 1, brake: false },
-    { until: 24, arm: -1, brake: false },
-    { until: 33, arm: 1, brake: true },
-    { until: 42, arm: 1, brake: false },
-    { until: 50, arm: -1, brake: false },
-    { until: 58, arm: 1, brake: true }
+    { until: 8, arm: 1, brake: 'FULL' },
+    { until: 17, arm: 1, brake: 'RELEASED' },
+    { until: 25, arm: -1, brake: 'HALF' },
+    { until: 34, arm: 1, brake: 'FULL' },
+    { until: 43, arm: 1, brake: 'RELEASED' },
+    { until: 51, arm: -1, brake: 'HALF' },
+    { until: 58, arm: 1, brake: 'FULL' }
   ],
   sequence2: [
-    { until: 8, arm: 1, brake: true },
-    { until: 17, arm: 1, brake: false },
-    { until: 27, arm: 1, brake: true },
-    { until: 36, arm: -1, brake: false },
-    { until: 47, arm: 1, brake: true },
-    { until: 58, arm: 1, brake: false },
-    { until: 67, arm: -1, brake: false },
-    { until: 74, arm: 1, brake: true }
+    { until: 8, arm: 1, brake: 'FULL' },
+    { until: 18, arm: 1, brake: 'RELEASED' },
+    { until: 27, arm: 1, brake: 'HALF' },
+    { until: 36, arm: -1, brake: 'RELEASED' },
+    { until: 47, arm: 1, brake: 'FULL' },
+    { until: 58, arm: 1, brake: 'RELEASED' },
+    { until: 67, arm: -1, brake: 'HALF' },
+    { until: 74, arm: 1, brake: 'FULL' }
   ],
   sequence3: [
-    { until: 9, arm: 1, brake: true },
-    { until: 19, arm: 1, brake: false },
-    { until: 29, arm: 1, brake: true },
-    { until: 39, arm: -1, brake: false },
-    { until: 50, arm: 1, brake: false },
-    { until: 61, arm: 1, brake: true },
-    { until: 72, arm: -1, brake: false },
-    { until: 84, arm: 1, brake: true },
-    { until: 92, arm: 0, brake: false }
+    { until: 9, arm: 1, brake: 'FULL' },
+    { until: 20, arm: 1, brake: 'RELEASED' },
+    { until: 30, arm: 1, brake: 'HALF' },
+    { until: 40, arm: -1, brake: 'RELEASED' },
+    { until: 51, arm: 1, brake: 'HALF' },
+    { until: 62, arm: 1, brake: 'FULL' },
+    { until: 73, arm: -1, brake: 'RELEASED' },
+    { until: 84, arm: 1, brake: 'HALF' },
+    { until: 92, arm: 0, brake: 'FULL' }
   ]
 });
 
@@ -100,6 +94,8 @@ export class RideController extends EventTarget {
       estop: false,
       fault: false,
       gondolaBrake: true,
+      brakeMode: 'FULL',
+      brakeDemand: 1,
       brakePressure: 1,
       brakeTemperature: 22,
       brakeFade: 1,
@@ -113,7 +109,7 @@ export class RideController extends EventTarget {
       cycleElapsed: 0,
       parkElapsed: 0,
       cycleStopRequested: false,
-      water: true,
+      water: false,
       queue: 0,
       onboard: 0,
       boardingCount: 0,
@@ -136,6 +132,12 @@ export class RideController extends EventTarget {
       nextArrival: 0,
       nextWaveIn: 0,
       totalArrivals: 0,
+      guestPhase: 'QUEUE CLOSED',
+      loadBatchTarget: 0,
+      loadBatchRemaining: 0,
+      loadBatchCommitted: false,
+      unloadingCount: 0,
+      platformGuests: 0,
       returnStage: 'PARKED',
       unloadReady: true,
       faultCode: null,
@@ -160,19 +162,18 @@ export class RideController extends EventTarget {
     };
     this.holds = new Set();
     this.dispatchStarted = 0;
-    this.arrivalAccumulator = 0;
-    this.guestAccumulator = 0;
-    this.boardingTransfers = [];
-    this.brakeOffset = 0;
     this.previousInversionBand = 0;
     this.lastArmVelocity = 0;
     this.lastArmAcceleration = 0;
     this.randomSeed = 0x5f3759df;
-    this.currentDemandLevel = 'quiet';
-    this.arrivalTimer = 3.5;
-    this.demandWaveTimer = 28;
     this.faultTimer = 90;
     this.repairTimer = 0;
+    this.physics = new TopSpinPhysics();
+    this.guestFlow = new GuestFlow(() => this.random(), CAPACITY);
+    this.waterSystem = new WaterSystem(30);
+    this.guestFlow.initialiseState(this.state);
+    this.waterSystem.initialiseState(this.state);
+    this.physics.sanitise(this.state);
   }
 
   random() {
@@ -237,7 +238,8 @@ export class RideController extends EventTarget {
     return this.stationary
       && Math.abs(wrappedAngle(s.armAngle)) < 3
       && Math.abs(wrappedAngle(s.gondolaAngle)) < 4
-      && s.gondolaBrake
+      && s.brakeMode === 'FULL'
+      && s.brakePressure > 0.94
       && s.armLock;
   }
 
@@ -248,7 +250,7 @@ export class RideController extends EventTarget {
       gate: !s.loadGate,
       restraints: s.restraintProved && s.restraints,
       platform: s.platformClear,
-      brake: s.gondolaBrake,
+      brake: s.brakeMode === 'FULL' && s.brakePressure > 0.94,
       drive: s.drive && !s.fault && !s.estop
     };
   }
@@ -278,6 +280,8 @@ export class RideController extends EventTarget {
         loadGate: false,
         platformClear: false,
         drive: false,
+        waterMaster: false,
+        water: false,
         mode: STATES.CLOSED
       });
     }
@@ -293,11 +297,7 @@ export class RideController extends EventTarget {
     if (!s.power) return this.reject('Turn the control key before opening the ride.');
     if (!s.rideOpen && s.testMode) return this.reject('Exit EMPTY TEST mode before opening the public queue.');
     s.rideOpen = !s.rideOpen;
-    if (s.rideOpen) {
-      this.currentDemandLevel = s.demandMode === 'dynamic' ? 'quiet' : s.demandMode;
-      this.arrivalTimer = 2.5 + this.random() * 3.5;
-      this.demandWaveTimer = 24 + this.random() * 20;
-    }
+    if (s.rideOpen) this.guestFlow.onEntranceOpened(s);
     if (![STATES.RUNNING, STATES.RETURNING].includes(s.mode)) s.platformClear = false;
     this.updateMode();
     this.emit(s.rideOpen
@@ -308,7 +308,7 @@ export class RideController extends EventTarget {
 
   setTestMode(active) {
     const s = this.state;
-    if ([STATES.RUNNING, STATES.RETURNING].includes(s.mode) || s.onboard > 0 || s.boardingCount > 0 || s.loadGate) {
+    if ([STATES.RUNNING, STATES.RETURNING].includes(s.mode) || s.onboard > 0 || this.guestFlow.gateTransferActive || s.loadGate) {
       return this.reject('Operating status can only change with an empty gondola, closed load gate and stationary ride.');
     }
     s.testMode = Boolean(active);
@@ -326,11 +326,8 @@ export class RideController extends EventTarget {
   }
 
   setDemandMode(mode) {
-    if (mode !== 'dynamic' && !DEMAND_PROFILES[mode]) return false;
-    this.state.demandMode = mode;
-    if (mode !== 'dynamic') this.currentDemandLevel = mode;
-    this.demandWaveTimer = 20 + this.random() * 25;
-    this.emit(`Guest demand set to ${mode === 'dynamic' ? 'dynamic park waves' : DEMAND_PROFILES[mode].label.toLowerCase()}.`);
+    if (!this.guestFlow.setDemandMode(this.state, mode)) return false;
+    this.emit(`Guest demand set to ${mode === 'dynamic' ? 'dynamic park waves' : mode.toUpperCase()}.`);
     return true;
   }
 
@@ -350,8 +347,8 @@ export class RideController extends EventTarget {
     if (s.restraints || s.restraintProgress > 0.02) {
       return this.reject('Open the restraints before operating the load gate.');
     }
-    if (s.loadGate && s.boardingCount > 0) {
-      return this.reject(`${s.boardingCount} guest${s.boardingCount === 1 ? ' is' : 's are'} still walking to the gondola.`);
+    if (s.loadGate && this.guestFlow.gateTransferActive) {
+      return this.reject(`${s.platformGuests} guest${s.platformGuests === 1 ? ' is' : 's are'} still moving through the platform.`);
     }
     if (!s.loadGate && !s.rideOpen && s.queue === 0 && !s.needsUnload && !s.testMode) {
       return this.reject('There are no waiting guests to load. Open the queue entrance first.');
@@ -360,15 +357,24 @@ export class RideController extends EventTarget {
     s.platformClear = false;
     if (s.loadGate) {
       s.mode = s.needsUnload && s.onboard > 0 ? STATES.UNLOADING : STATES.BOARDING;
+      if (!s.needsUnload && s.onboard === 0) s.loadBatchCommitted = false;
       this.emit(s.mode === STATES.UNLOADING
         ? 'Load gate opened. Guests are leaving the gondola.'
-        : 'Load gate opened. Guests are boarding available seats.');
+        : 'Load gate opened. Platform ready — press ADMIT NEXT BATCH when you want guests to board.');
     } else {
       this.updateMode();
       this.emit(s.onboard > 0
         ? 'Load gate closed. Close and prove all restraints.'
-        : 'Load gate closed. Waiting for guests.');
+        : 'Load gate closed. Platform transfer secured.');
     }
+    return true;
+  }
+
+  admitNextBatch() {
+    const result = this.guestFlow.requestLoad(this.state, this.safeAtLoad);
+    if (!result.ok) return this.reject(result.message);
+    this.state.mode = STATES.BOARDING;
+    this.emit(`Batch gate released. ${result.batchSize} guest${result.batchSize === 1 ? '' : 's'} admitted for this load only.`);
     return true;
   }
 
@@ -432,25 +438,49 @@ export class RideController extends EventTarget {
   }
 
   toggleWater() {
-    this.state.water = !this.state.water;
-    this.emit(`Water effects ${this.state.water ? 'armed' : 'disabled'}.`);
+    if (!this.state.power) return this.reject('Control power is required before starting the Aquafun pump.');
+    this.waterSystem.setMaster(this.state, !this.state.waterMaster);
+    this.emit(`Aquafun pump ${this.state.waterMaster ? 'started' : 'stopped'}.`);
+    return true;
+  }
+
+  setWaterMode(mode) {
+    if (!this.waterSystem.setMode(this.state, mode)) return false;
+    this.emit(`Aquafun pattern set to ${mode}.`);
+    return true;
+  }
+
+  setWaterHeight(value) {
+    this.waterSystem.setHeight(this.state, value);
+    this.emit(`Aquafun height demand ${Math.round(this.state.waterHeightSetpoint * 100)}%.`);
+    return true;
+  }
+
+  toggleWaterZone(zone) {
+    if (!this.waterSystem.toggleZone(this.state, zone)) return false;
+    this.emit(`${zone.toUpperCase()} fountain zone ${this.state.waterZones[zone] ? 'enabled' : 'isolated'}.`);
+    return true;
+  }
+
+  setBrakeMode(mode, announce = false) {
+    const s = this.state;
+    if ((s.mode !== STATES.RUNNING || s.program !== 'manual') && mode !== 'FULL') {
+      return this.reject('HALF and RELEASED gondola brake positions require an active manual cycle.');
+    }
+    if (!this.physics.setBrakeMode(s, mode)) return false;
+    if (announce) {
+      const messages = {
+        RELEASED: 'Gondola brake RELEASED. The gondola is free-swinging.',
+        HALF: 'Gondola brake at HALF pressure. Friction is trimming the swing without locking it.',
+        FULL: 'Gondola brake FULL. The calipers are capturing the gondola relative to the arms.'
+      };
+      this.emit(messages[mode]);
+    }
     return true;
   }
 
   setGondolaBrake(active, announce = false) {
-    const s = this.state;
-    if (s.mode !== STATES.RUNNING || s.program !== 'manual') {
-      if (!active) {
-        this.applyBrake(true);
-        return true;
-      }
-      return this.reject('Gondola brake control is available during a manual cycle only.');
-    }
-    this.applyBrake(Boolean(active));
-    if (announce) this.emit(active
-      ? 'Gondola brake paddle held. Calipers are applying.'
-      : 'Gondola brake paddle released. Gondola is free-swinging.');
-    return true;
+    return this.setBrakeMode(active ? 'FULL' : 'RELEASED', announce);
   }
 
   setArmSpeed(value) {
@@ -517,10 +547,10 @@ export class RideController extends EventTarget {
       s.armLock = false;
       this.applyBrake(true);
     } else {
-      this.applyBrake(false);
+      this.applyBrake('FULL');
     }
     this.emit(s.program === 'manual'
-      ? 'Manual cycle started. Release ARM LOCK, drive the arms and time the GONDOLA BRAKE.'
+      ? 'Manual cycle started. Release ARM LOCK, drive the arms, then use RELEASED / HALF / FULL gondola braking.'
       : `${PROGRAMS[s.program].label} started. Sequence controller has command.`);
     return true;
   }
@@ -532,6 +562,7 @@ export class RideController extends EventTarget {
     s.mode = STATES.RETURNING;
     s.armLock = false;
     this.holds.clear();
+    this.physics.beginReturn(s);
     this.emit('RETURN TO LOAD accepted. Controlled braking, arm parking, gondola levelling and load locks are automatic.');
     return true;
   }
@@ -581,6 +612,7 @@ export class RideController extends EventTarget {
     if (!this.safeAtLoad) {
       s.mode = STATES.RETURNING;
       s.armLock = false;
+      this.physics.beginReturn(s);
       this.emit('Fault reset accepted. Controlled recovery to load position has started.');
     } else {
       this.updateMode();
@@ -615,6 +647,7 @@ export class RideController extends EventTarget {
     s.platformClear = false;
     s.armLock = true;
     this.applyBrake(true);
+    if (code === 'water_pressure') this.waterSystem.setMaster(s, false);
     this.holds.clear();
     this.emit(`${definition.severity} FAULT ${code.toUpperCase()}: ${definition.label}. Stop operation and call maintenance.`, 'error');
     if (source === 'random') this.resetFaultTimer();
@@ -707,10 +740,9 @@ export class RideController extends EventTarget {
     else s.mode = STATES.WAITING;
   }
 
-  applyBrake(engaged) {
-    const s = this.state;
-    if (engaged && !s.gondolaBrake) this.brakeOffset = s.gondolaAngle - s.armAngle;
-    s.gondolaBrake = engaged;
+  applyBrake(mode) {
+    const brakeMode = typeof mode === 'string' ? mode : mode ? 'FULL' : 'RELEASED';
+    this.physics.setBrakeMode(this.state, brakeMode);
   }
 
   getAutoCommand() {
@@ -719,86 +751,12 @@ export class RideController extends EventTarget {
     return sequence?.find(step => s.cycleElapsed < step.until) || null;
   }
 
-  advanceDemandWave() {
-    const mode = this.state.demandMode;
-    if (mode !== 'dynamic') {
-      this.currentDemandLevel = mode;
-      this.demandWaveTimer = 35 + this.random() * 30;
-      return;
-    }
-    const transitions = {
-      quiet: ['quiet', 'steady', 'steady', 'busy'],
-      steady: ['quiet', 'steady', 'busy', 'busy', 'surge'],
-      busy: ['steady', 'busy', 'busy', 'surge'],
-      surge: ['busy', 'busy', 'steady']
-    };
-    const choices = transitions[this.currentDemandLevel] || transitions.quiet;
-    this.currentDemandLevel = choices[Math.floor(this.random() * choices.length)];
-    this.demandWaveTimer = 28 + this.random() * 48;
-  }
-
   tickGuests(dt) {
-    const s = this.state;
-    if (s.rideOpen) {
-      s.parkElapsed += dt;
-      this.demandWaveTimer -= dt;
-      if (this.demandWaveTimer <= 0) this.advanceDemandWave();
-      const profile = DEMAND_PROFILES[this.currentDemandLevel] || DEMAND_PROFILES.quiet;
-      s.demandLevel = profile.label;
-      s.demandRate = profile.rate;
-      s.nextWaveIn = Math.max(0, this.demandWaveTimer);
-      this.arrivalTimer -= dt;
-      if (this.arrivalTimer <= 0 && s.queue < 80) {
-        const partySize = 1 + Math.floor(this.random() * profile.maxParty);
-        const admitted = Math.min(partySize, 80 - s.queue);
-        s.queue += admitted;
-        s.totalArrivals += admitted;
-        const baseInterval = 1 / profile.rate;
-        this.arrivalTimer = baseInterval * (0.62 + this.random() * 0.86);
-      }
-      s.nextArrival = Math.max(0, this.arrivalTimer);
-    } else {
-      s.demandLevel = 'CLOSED';
-      s.demandRate = 0;
-      s.nextArrival = this.arrivalTimer;
-      s.nextWaveIn = this.demandWaveTimer;
-    }
-
-    for (let index = this.boardingTransfers.length - 1; index >= 0; index -= 1) {
-      this.boardingTransfers[index] -= dt;
-      if (this.boardingTransfers[index] <= 0) {
-        this.boardingTransfers.splice(index, 1);
-        s.onboard += 1;
-        s.score += 2;
-      }
-    }
-    s.boardingCount = this.boardingTransfers.length;
-
-    if (!s.loadGate || !this.safeAtLoad) return;
-    // Approximate a staffed group load rather than teleporting a full gondola.
-    this.guestAccumulator += dt * (s.needsUnload ? 1.48 : 1.15);
-    while (this.guestAccumulator >= 1) {
-      if (s.needsUnload && s.onboard > 0) {
-        s.onboard -= 1;
-        s.guestsServed += 1;
-        s.achievements.served500 = s.guestsServed >= 500;
-        s.score += Math.round(18 + s.happiness * 0.32);
-      } else {
-        if (s.needsUnload) {
-          s.needsUnload = false;
-          s.mode = STATES.BOARDING;
-        }
-        if (s.queue > 0 && s.onboard + this.boardingTransfers.length < CAPACITY) {
-          s.queue -= 1;
-          this.boardingTransfers.push(3.15 + (s.queue % 5) * 0.08);
-          s.boardingCount = this.boardingTransfers.length;
-          s.boardingStarted += 1;
-        } else {
-          this.guestAccumulator = 0;
-          break;
-        }
-      }
-      this.guestAccumulator -= 1;
+    this.guestFlow.tick(this.state, dt, this.safeAtLoad);
+    if (this.state.loadGate) {
+      this.state.mode = this.state.needsUnload || this.state.unloadingCount > 0
+        ? STATES.UNLOADING
+        : STATES.BOARDING;
     }
   }
 
@@ -818,146 +776,61 @@ export class RideController extends EventTarget {
 
   tickMotion(dt) {
     const s = this.state;
+    const safeDt = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.05) : 0;
     let targetSpeed = 0;
-    let returnArmTarget = null;
-    let returnGondolaTarget = null;
 
     if (s.mode === STATES.RUNNING) {
-      s.cycleElapsed += dt;
+      s.cycleElapsed += safeDt;
       if (s.program === 'manual') {
         let armCommand = 0;
         if (!s.armLock) {
           if (this.holds.has('armForward')) armCommand += 1;
           if (this.holds.has('armReverse')) armCommand -= 1;
         }
-        targetSpeed = armCommand * (20 + s.armSpeedSetpoint * 40);
+        targetSpeed = armCommand * (16 + s.armSpeedSetpoint * 32);
         if (s.cycleElapsed >= PROGRAMS.manual.duration) {
           s.mode = STATES.RETURNING;
+          this.physics.beginReturn(s);
           this.emit('Maximum manual cycle time reached. Service return engaged.', 'error');
         }
       } else {
         const command = this.getAutoCommand();
         if (!command) {
           s.mode = STATES.RETURNING;
+          this.physics.beginReturn(s);
           this.emit('Programme complete. Returning the gondola to load position.');
         } else {
-          targetSpeed = command.arm * (27 + PROGRAMS[s.program].intensity * 7);
+          targetSpeed = command.arm * (22 + PROGRAMS[s.program].intensity * 6);
           s.armLock = command.arm === 0;
           this.applyBrake(command.brake);
         }
       }
     }
 
-    if (s.mode === STATES.RETURNING) {
-      returnArmTarget = Math.round(s.armAngle / 360) * 360;
-      returnGondolaTarget = Math.round(s.gondolaAngle / 360) * 360;
-      const error = returnArmTarget - s.armAngle;
-      targetSpeed = Math.abs(error) < 0.25 ? 0 : clamp(error * 0.92, -28, 28);
-      s.armLock = false;
-      this.applyBrake(false);
-    }
-
     if (![STATES.RUNNING, STATES.RETURNING].includes(s.mode)) targetSpeed = 0;
     if (s.fault || s.estop || s.armLock) targetSpeed = 0;
+    if (s.mode === STATES.RETURNING) s.armLock = false;
 
-    const oldArm = s.armAngle;
-    const substeps = Math.max(1, Math.ceil(dt / (1 / 180)));
-    const step = dt / substeps;
-    let pivotAccelerationY = 0;
-    let pivotAccelerationZ = 0;
-    let thetaAcceleration = 0;
-
-    // Semi-implicit sub-stepping keeps brake captures and multiple flips stable
-    // even when a slow browser frame supplies the maximum 50 ms timestep.
-    for (let index = 0; index < substeps; index += 1) {
-      const previousArmVelocity = s.armVelocity;
-      const driveAcceleration = Math.abs(targetSpeed) > Math.abs(s.armVelocity) ? 46 : 68;
-      s.armVelocity = approach(s.armVelocity, targetSpeed, driveAcceleration * step);
-      if (s.fault || s.estop) s.armVelocity = approach(s.armVelocity, 0, 110 * step);
-      const armAcceleration = (s.armVelocity - previousArmVelocity) / step;
-      s.armAngle += s.armVelocity * step;
-
-      const alpha = s.armAngle * DEG;
-      const alphaVelocity = s.armVelocity * DEG;
-      const alphaAcceleration = armAcceleration * DEG;
-      let theta = s.gondolaAngle * DEG;
-      let thetaVelocity = s.gondolaVelocity * DEG;
-      pivotAccelerationZ = ARM_RADIUS * (Math.sin(alpha) * alphaVelocity ** 2 - Math.cos(alpha) * alphaAcceleration);
-      pivotAccelerationY = ARM_RADIUS * (Math.cos(alpha) * alphaVelocity ** 2 + Math.sin(alpha) * alphaAcceleration);
-
-      if (s.mode === STATES.RETURNING) {
-        const gondolaError = (returnGondolaTarget - s.gondolaAngle) * DEG;
-        thetaAcceleration = clamp(gondolaError * 4.8 - thetaVelocity * 2.9, -4.6, 4.6);
-      } else {
-        thetaAcceleration = (-GRAVITY * Math.sin(theta)
-          + pivotAccelerationZ * Math.cos(theta)
-          - pivotAccelerationY * Math.sin(theta)) / PHYSICAL_PENDULUM_LENGTH;
-        thetaAcceleration -= thetaVelocity * (0.036 + 0.008 * Math.abs(thetaVelocity));
-      }
-
-      const pressureTarget = s.gondolaBrake ? 1 : 0;
-      s.brakePressure = approach(s.brakePressure, pressureTarget, step * (s.gondolaBrake ? 4.7 : 8.5));
-      const relativeVelocity = thetaVelocity - alphaVelocity;
-      let caliperAcceleration = 0;
-      if (s.brakePressure > 0.002 && s.mode !== STATES.RETURNING) {
-        const relativeAngle = wrappedAngle((s.gondolaAngle - s.armAngle) - this.brakeOffset) * DEG;
-        s.brakeFade = clamp(1 - Math.max(0, s.brakeTemperature - 155) / 210, 0.56, 1);
-        caliperAcceleration = clamp(-relativeAngle * 38 - relativeVelocity * 15.5, -32, 32)
-          * s.brakePressure * s.brakeFade;
-        thetaAcceleration += caliperAcceleration;
-
-        if (s.brakePressure > 0.985 && Math.abs(relativeVelocity) < 0.07 && Math.abs(relativeAngle) < 0.012) {
-          theta = (s.armAngle + this.brakeOffset) * DEG;
-          thetaVelocity = alphaVelocity;
-          thetaAcceleration = alphaAcceleration;
-        }
-      }
-
-      s.brakeTemperature = clamp(
-        s.brakeTemperature
-          + Math.abs(caliperAcceleration * relativeVelocity) * step * 0.13
-          - Math.max(0, s.brakeTemperature - 22) * step * 0.028,
-        22,
-        280
-      );
-      if (s.brakeTemperature < 155) s.brakeFade = 1;
-
-      thetaVelocity += thetaAcceleration * step;
-      thetaVelocity = clamp(thetaVelocity, -7.4, 7.4);
-      theta += thetaVelocity * step;
-      s.gondolaVelocity = thetaVelocity * RAD_TO_DEG;
-      s.gondolaAngle = theta * RAD_TO_DEG;
-    }
-
-    const armDelta = s.armAngle - oldArm;
-    this.lastArmAcceleration = (s.armVelocity - this.lastArmVelocity) / Math.max(dt, 0.001);
+    const result = this.physics.step(s, safeDt, {
+      armTargetSpeed: targetSpeed,
+      returning: s.mode === STATES.RETURNING
+    });
+    this.lastArmAcceleration = (s.armVelocity - this.lastArmVelocity) / Math.max(safeDt, 0.001);
     this.lastArmVelocity = s.armVelocity;
 
-    if (s.fault) {
-      s.gondolaVelocity = approach(s.gondolaVelocity, 0, 105 * dt);
+    if (s.mode === STATES.RETURNING && result.settled) {
+      this.completeCycle();
+      return;
     }
 
-    if (s.mode === STATES.RETURNING) {
-      const armError = returnArmTarget - s.armAngle;
-      const gondolaError = returnGondolaTarget - s.gondolaAngle;
-      if (Math.abs(armError) < 0.65 && Math.abs(s.armVelocity) < 1.5
-        && Math.abs(gondolaError) < 1.6 && Math.abs(s.gondolaVelocity) < 2.3) {
-        s.armAngle = returnArmTarget;
-        s.gondolaAngle = returnGondolaTarget;
-        s.armVelocity = 0;
-        s.gondolaVelocity = 0;
-        s.armLock = true;
-        this.brakeOffset = 0;
-        this.applyBrake(true);
-        s.brakePressure = 1;
-        this.completeCycle();
-        return;
-      }
-    }
-
-    if (s.mode === STATES.RUNNING) {
-      this.updateRideMetrics(dt, armDelta, pivotAccelerationY, pivotAccelerationZ, thetaAcceleration);
-      if (s.program === 'manual' && s.cycleStopRequested && this.safeAtLoad) this.completeCycle();
+    if (s.mode === STATES.RUNNING && safeDt > 0) {
+      this.updateRideMetrics(
+        safeDt,
+        result.armDelta,
+        result.pivotAccelerationY,
+        result.pivotAccelerationZ,
+        result.gondolaAcceleration
+      );
     }
   }
 
@@ -1015,6 +888,7 @@ export class RideController extends EventTarget {
     this.tickRestraints(dt);
     this.tickGuests(dt);
     this.tickMotion(dt);
+    this.waterSystem.tick(s, dt, [STATES.RUNNING, STATES.RETURNING].includes(s.mode));
     this.tickMaintenance(dt);
     this.tickRandomFaults(dt);
     s.throughput = s.parkElapsed > 10 ? Math.round(s.guestsServed / s.parkElapsed * 3600) : 0;

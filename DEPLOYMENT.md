@@ -30,9 +30,12 @@ Rollercoaster-Operator-Sim/
 │   │   ├── audio.js
 │   │   └── supabase.js
 │   └── simulator/
+│       ├── guest-flow.js
 │       ├── main.js
 │       ├── scene.js
-│       └── state-machine.js
+│       ├── state-machine.js
+│       ├── topspin-physics.js
+│       └── water-system.js
 └── assets/
     ├── audio/
     │   └── README.md

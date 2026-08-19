@@ -113,6 +113,15 @@
           <div><small>SERVED</small><strong data-telemetry="served">0</strong></div>
           <div><small>CYCLES</small><strong data-telemetry="cycles">0</strong></div>
         </div>
+        <div class="guest-flow-strip" aria-label="Live guest flow">
+          <div><small>FLOW STATE</small><strong data-telemetry="guest-phase">QUEUE CLOSED</strong></div>
+          <i>→</i>
+          <div><small>BATCH</small><strong><span data-telemetry="batch-remaining">0</span> / <span data-telemetry="batch-target">0</span></strong></div>
+          <i>→</i>
+          <div><small>PLATFORM</small><strong data-telemetry="platform-guests">0</strong></div>
+          <i>→</i>
+          <div><small>UNLOADING</small><strong data-telemetry="unloading">0</strong></div>
+        </div>
         <div class="seat-map" id="seat-map" aria-label="Thirty-eight restraint circuits"></div>
         <div class="challenge-strip" aria-label="Session challenges">
           <span data-challenge="inversions3">3× FLIP</span>
@@ -151,6 +160,9 @@
           </label>
           <p id="operation-permit-note"><strong>PUBLIC</strong> Guests arrive only while the queue entrance is open.</p>
         </div>
+        <button class="admit-batch" id="admit-batch">
+          <i></i><span>ADMIT NEXT BATCH<small>ONE CONTROLLED LOAD ONLY</small></span><kbd>A</kbd>
+        </button>
         <div class="control-row control-row--five">
           <button class="panel-button panel-button--key" id="power">
             <i></i><span>CONTROL KEY<small>OFF</small><kbd>K</kbd></span>
@@ -170,14 +182,20 @@
         </div>
       </section>
 
-      <section class="panel-section" data-console-panel="motion">
-        <h2>Top Spin motion control <span>02 / A</span></h2>
+      <section class="panel-section motion-desk" data-console-panel="motion">
+        <h2>Operator drive desk <span>02 / LIVE</span></h2>
+        <div class="instrument-bank" aria-label="Live motion instruments">
+          <div><small>ARM POSITION</small><strong><span data-telemetry="arm-console">0.0</span>°</strong><i data-gauge="arm"></i></div>
+          <div><small>GONDOLA SPEED</small><strong><span data-telemetry="rpm-console">0.0</span> RPM</strong><i data-gauge="speed"></i></div>
+          <div><small>RELATIVE ANGLE</small><strong><span data-telemetry="relative-console">0</span>°</strong><i data-gauge="relative"></i></div>
+          <div><small>BRAKE PRESSURE</small><strong><span data-telemetry="brake-console">100</span>%</strong><i data-gauge="brake"></i></div>
+        </div>
         <div class="motion-return-strip">
           <div data-lamp="loadReady"><i></i><span>RETURN CONTROLLER<small data-telemetry="return-stage-compact">PARKED &amp; LOCKED</small></span></div>
-          <p><strong>TO END THE CYCLE:</strong> press <kbd>S</kbd> once. Braking, arm parking, gondola levelling and load proof are automatic.</p>
+          <p><strong>END CYCLE:</strong> press <kbd>S</kbd> once for controlled braking, arm parking, gondola levelling and load proof.</p>
         </div>
-        <div class="mode-row">
-          <label class="speed-selector speed-selector--wide">
+        <div class="drive-config">
+          <label class="console-select">
             OPERATING MODE
             <select id="program">
               <option value="manual">Manual operation</option>
@@ -186,8 +204,8 @@
               <option value="sequence3">Sequence 3 — Extreme</option>
             </select>
           </label>
-          <label class="speed-selector">
-            ARM SPEED
+          <label class="console-select">
+            ARM DRIVE SPEED
             <select id="arm-speed">
               <option value="0.42">42% — Setup</option>
               <option value="0.58">58% — Low</option>
@@ -199,44 +217,59 @@
           <button class="panel-button panel-button--drive" id="drive">
             <i></i><span>MAIN DRIVE<small>DISABLED</small><kbd>D</kbd></span>
           </button>
-          <button class="panel-button" id="water">
-            <i></i><span>WATER FX<small>ARMED</small><kbd>W</kbd></span>
-          </button>
         </div>
 
-        <div class="manual-grid">
-          <button class="hold-button" id="arm-reverse">◀<span>ARM ANTI-CLOCKWISE</span><kbd>←</kbd></button>
-          <button class="system-button active" id="arm-lock"><i></i><span>ARM LOCK<small>ENGAGED</small></span><kbd>L</kbd></button>
-          <button class="hold-button" id="arm-forward">▶<span>ARM CLOCKWISE</span><kbd>→</kbd></button>
-          <button class="system-button active brake-paddle" id="gondola-brake"><i></i><span>HOLD GONDOLA BRAKE<small>100% PRESSURE</small></span><kbd>B</kbd></button>
-          <button class="system-button system-button--stop" id="cycle-stop"><i></i><span>RETURN TO LOAD<small>PRESS TO START</small></span><kbd>S</kbd></button>
+        <div class="physical-control-grid">
+          <fieldset class="arm-station">
+            <legend>ARM DRIVE</legend>
+            <div class="arm-paddles">
+              <button class="hold-button" id="arm-reverse">◀<span>ANTI-CLOCKWISE</span><kbd>←</kbd></button>
+              <button class="system-button active" id="arm-lock"><i></i><span>ARM PARK LOCK<small>ENGAGED</small></span><kbd>L</kbd></button>
+              <button class="hold-button" id="arm-forward">▶<span>CLOCKWISE</span><kbd>→</kbd></button>
+            </div>
+            <button class="return-button" id="cycle-stop"><i></i><span>CONTROLLED RETURN TO LOAD<small>PRESS ONCE — AUTOMATIC PARK</small></span><kbd>S</kbd></button>
+          </fieldset>
+
+          <fieldset class="brake-station">
+            <legend>GONDOLA BRAKE</legend>
+            <div class="brake-selector" role="group" aria-label="Gondola brake pressure selector">
+              <button id="brake-release" data-brake-mode="RELEASED"><i></i><span>RELEASED<small>FREE SWING</small></span><kbd>Z</kbd></button>
+              <button id="brake-half" data-brake-mode="HALF"><i></i><span>HALF<small>TRIM / DAMP</small></span><kbd>X</kbd></button>
+              <button id="brake-full" class="active" data-brake-mode="FULL"><i></i><span>FULL<small>CAPTURE</small></span><kbd>B</kbd></button>
+            </div>
+            <div class="brake-pressure-meter"><span>CALIPER PRESSURE</span><div><i id="brake-pressure-fill"></i></div><strong><span data-telemetry="brake-mode">FULL</span> / <span data-telemetry="brake-temp">22</span>°C</strong></div>
+            <p>HALF applies controllable friction without locking the gondola. FULL captures its current position relative to the arms.</p>
+          </fieldset>
         </div>
-        <p class="panel-note">The gondola is free-swinging. Hold the brake paddle to build caliper pressure and capture its position relative to the arms; release it to let gravity and movement of the arm pivots develop the swing.</p>
-        <div class="motion-instruments" aria-label="Live mechanical instruments">
-          <div><small>RELATIVE SPEED</small><strong><span data-telemetry="relative-rpm">0.0</span> RPM</strong></div>
-          <div><small>BRAKE DISC</small><strong><span data-telemetry="brake-temp">22</span>°C</strong></div>
-          <div><small>PENDULUM PHASE</small><strong data-telemetry="phase">BOTTOM</strong></div>
-          <div><small>CONTINUOUS FLIPS</small><strong data-telemetry="flips">0</strong></div>
+
+        <fieldset class="water-station">
+          <legend>AQUAFUN FOUNTAINS</legend>
+          <button class="water-master" id="water"><i></i><span>PUMP MASTER<small>STOPPED</small></span><kbd>W</kbd></button>
+          <label class="console-select">PATTERN
+            <select id="water-pattern">
+              <option value="CURTAIN">Curtain</option>
+              <option value="CHASE">Left / right chase</option>
+              <option value="ALTERNATE">Alternate banks</option>
+              <option value="PULSE">Pulse</option>
+              <option value="AUTO">Ride-synchronised auto</option>
+            </select>
+          </label>
+          <label class="water-height">JET HEIGHT <strong><span data-telemetry="water-height">64</span>%</strong>
+            <input id="water-height" type="range" min="0" max="100" value="64" step="2">
+          </label>
+          <div class="water-zones" aria-label="Fountain zones">
+            <button class="active" data-water-zone="left">LEFT</button>
+            <button class="active" data-water-zone="centre">CENTRE</button>
+            <button class="active" data-water-zone="right">RIGHT</button>
+          </div>
+          <div class="water-pressure"><small>PUMP PRESSURE</small><strong><span data-telemetry="water-pressure">0</span>%</strong></div>
+        </fieldset>
+        <div class="motion-footer-instruments">
+          <span>REL SPEED <strong><span data-telemetry="relative-rpm">0.0</span> RPM</strong></span>
+          <span>PHASE <strong data-telemetry="phase">BOTTOM</strong></span>
+          <span>FLIPS <strong data-telemetry="flips">0</strong></span>
         </div>
         <p class="manual-coach" id="manual-coach">Manual coach: lock the gondola to the moving arms, then release the brake to convert arm movement into free swing.</p>
-      </section>
-
-      <section class="panel-section return-section" data-console-panel="motion">
-        <h2>Controlled return <span>02 / B</span></h2>
-        <div class="return-head">
-          <div><small>RETURN CONTROLLER</small><strong data-telemetry="return-stage">PARKED &amp; LOCKED</strong></div>
-          <div data-lamp="loadReady"><i></i><span>LOAD POSITION<small>PROVED</small></span></div>
-        </div>
-        <div class="return-track" aria-label="Automatic return stages">
-          <span data-return-step="brake">1<small>Brake</small></span>
-          <i></i>
-          <span data-return-step="arms">2<small>Park arms</small></span>
-          <i></i>
-          <span data-return-step="level">3<small>Level gondola</small></span>
-          <i></i>
-          <span data-return-step="locks">4<small>Prove locks</small></span>
-        </div>
-        <p>Press <kbd>S</kbd> once at any point in the cycle. The controller performs a controlled stop and presents the gondola at the unload position.</p>
       </section>
 
       <section class="panel-section maintenance-section" data-console-panel="maintenance">
@@ -318,26 +351,30 @@
     <ol>
       <li>Press <kbd>K</kbd> for control power. Guests arrive gradually only after <kbd>O</kbd> opens the queue; demand rises and falls in park waves.</li>
       <li>For an empty engineering run, select <strong>Empty test cycle</strong>. This closes the public queue and permits a dispatch with no riders.</li>
-      <li>Press <kbd>G</kbd> to open the load gate. Guests board one seat at a time from the queue.</li>
+      <li>Press <kbd>G</kbd> to open the load gate, then <kbd>A</kbd> to release exactly one waiting batch. New arrivals remain behind the batch gate for the next cycle.</li>
       <li>Close the gate with <kbd>G</kbd>, then press <kbd>R</kbd> and wait for every occupied restraint circuit to prove.</li>
       <li>Confirm the platform with <kbd>C</kbd>, enable the drive with <kbd>D</kbd>, then hold <kbd>SPACE</kbd>.</li>
-      <li>For manual mode, release arm lock with <kbd>L</kbd>. Hold the arrow keys to drive the arms. Hold <kbd>B</kbd> to apply the gondola brake; release <kbd>B</kbd> for free swing.</li>
-      <li>To build flips, carry the braked gondola upward with the arms, release the brake before the crest, then reverse the arms as the free gondola passes through the bottom. Short brake captures add or remove momentum depending on timing.</li>
+      <li>For manual mode, release arm lock with <kbd>L</kbd> and hold the arrow keys to drive the arms. Brake positions are persistent: <kbd>Z</kbd> RELEASED, <kbd>X</kbd> HALF and <kbd>B</kbd> FULL.</li>
+      <li>FULL captures the gondola relative to the arms. RELEASED gives a true free swing. HALF adds friction without locking, so it can calm an excessive swing or shape the next inversion.</li>
       <li>Press <kbd>S</kbd> once to finish. The return controller brakes the ride, parks the arms, levels the gondola and proves the load locks automatically.</li>
-      <li>Open restraints, then open the gate to unload. The next group boards automatically.</li>
+      <li>Open restraints, then open the gate to unload. Once the platform is clear, press <kbd>A</kbd> to admit the next batch when you are ready.</li>
+      <li>Aquafun can run while the ride is idle or moving: <kbd>W</kbd> starts the pump, <kbd>P</kbd> changes pattern and <kbd>[</kbd>/<kbd>]</kbd> adjusts jet height. The three zone isolators are on the motion desk.</li>
       <li>When a fault latches, open <strong>Maintenance</strong> or press <kbd>M</kbd>. Call the mechanic, select the affected system, complete the repair, then press <kbd>F</kbd>.</li>
     </ol>
     <h3>Keyboard commands</h3>
     <div class="key-grid">
       <span><kbd>K</kbd> Control key</span><span><kbd>O</kbd> Queue entrance</span>
-      <span><kbd>G</kbd> Load gate</span><span><kbd>R</kbd> Restraints</span>
-      <span><kbd>C</kbd> Platform clear</span><span><kbd>D</kbd> Main drive</span>
-      <span><kbd>←</kbd><kbd>→</kbd> Hold arm drive</span><span><kbd>B</kbd> Hold gondola brake</span>
-      <span><kbd>L</kbd> Arm lock</span><span><kbd>S</kbd> Stop / return</span>
-      <span><kbd>W</kbd> Water effects</span><span><kbd>1–4</kbd> Operating mode</span>
-      <span><kbd>SPACE</kbd> Dispatch</span><span><kbd>E</kbd> Emergency stop</span>
-      <span><kbd>F</kbd> Fault reset</span><span><kbd>V</kbd> Change camera</span>
-      <span><kbd>M</kbd> Call mechanic</span><span><kbd>T</kbd> Empty test permit</span>
+      <span><kbd>G</kbd> Load gate</span><span><kbd>A</kbd> Admit one batch</span>
+      <span><kbd>R</kbd> Restraints</span><span><kbd>C</kbd> Platform clear</span>
+      <span><kbd>D</kbd> Main drive</span><span><kbd>←</kbd><kbd>→</kbd> Hold arm drive</span>
+      <span><kbd>Z</kbd> Brake released</span><span><kbd>X</kbd> Half brake</span>
+      <span><kbd>B</kbd> Full brake</span><span><kbd>L</kbd> Arm lock</span>
+      <span><kbd>S</kbd> Stop / return</span><span><kbd>W</kbd> Water pump</span>
+      <span><kbd>P</kbd> Fountain pattern</span><span><kbd>[</kbd><kbd>]</kbd> Jet height</span>
+      <span><kbd>1–4</kbd> Operating mode</span><span><kbd>SPACE</kbd> Dispatch</span>
+      <span><kbd>E</kbd> Emergency stop</span><span><kbd>F</kbd> Fault reset</span>
+      <span><kbd>V</kbd> Change camera</span><span><kbd>M</kbd> Call mechanic</span>
+      <span><kbd>T</kbd> Empty test permit</span>
     </div>
     <p>Automatic sequences control the arm drive and gondola brake for you. Manual mode scores more strongly for sustained happiness, controlled inversions and efficient throughput.</p>
   </dialog>

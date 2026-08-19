@@ -4,13 +4,15 @@ A desktop-first browser game foundation for realistic theme-park ride operation.
 
 ## Toxicator operation
 
-The gondola and queue begin empty. Guests arrive in small parties only while the entrance is open, with dynamic quiet, steady, busy and surge periods rather than an instant pre-filled crowd. Guests leave the visible queue, walk up the access route and take centre-out assigned seats; the load gate is interlocked until every moving guest is seated. The entrance can be closed at any time without removing guests already waiting. Close the gate, close and prove the occupied restraints, confirm the platform, enable the main arm drive and hold dispatch.
+The gondola and queue begin empty. Guests arrive in small parties only while the entrance is open, with dynamic quiet, steady, busy and surge periods rather than an instant pre-filled crowd. Opening the load gate does not force a load: the operator must release one explicit batch. That committed group walks up the access route and takes centre-out assigned seats while later arrivals stay behind the batch gate for the next cycle. The entrance can be closed at any time without removing guests already waiting. Close the gate, close and prove the occupied restraints, confirm the platform, enable the main arm drive and hold dispatch.
 
 Select **Empty test cycle** to isolate the public entrance and dispatch without riders after normal safety proving. Pressing **Return to Load** starts an automatic controlled-stop sequence that brakes the motion, parks the arms, levels the gondola and proves the load locks before unloading. Random faults use a complete call-out loop: contact the mechanic, wait for arrival, diagnose the affected system, complete the repair and reset the latched circuit. Test mode also provides deliberate training-fault injection.
 
-The manual mode models the defining Top Spin interaction: motor-driven arms move the gondola pivot while gravity, pivot acceleration and inertia drive the independently swinging gondola. The integrator uses fixed substeps for stable momentum transfer and repeated inversions. A pressure-ramped hold brake captures the gondola relative to the arms, generates heat and can fade when abused; it is not treated as a second powered motor. Automatic modes provide three original ride sequences built from the same physics.
+The manual mode models the defining Top Spin interaction: motor-driven arms move the gondola pivot while gravity, pivot acceleration and inertia drive the independently swinging gondola. The integrator uses fixed substeps, energy damping and speed envelopes for stable momentum transfer and controlled inversions. The gondola brake has three persistent positions: RELEASED permits a free swing, HALF adds friction without locking, and FULL captures the gondola relative to the arms. Brake pressure ramps physically, generates heat and can fade when abused; it is not treated as a second powered motor. Automatic modes provide three original ride sequences built from the same physics.
 
-Keyboard controls: `K` control key, `O` entrance, `G` load gate, `R` restraints, `C` platform clear, `D` drive enable, `Space` dispatch, hold the arrow keys for arm drive, hold `B` for gondola brake pressure, `L` arm lock, `S` return to load, `T` toggle empty-test permit, `M` call mechanic, `W` water effects, `1`–`4` operating mode, `E` emergency stop and `F` fault reset.
+Aquafun has its own pump pressure, height demand, left/centre/right isolators and five patterns. It can be operated while the ride is idle or moving; AUTO is the only pattern tied directly to ride motion.
+
+Keyboard controls: `K` control key, `O` entrance, `G` load gate, `A` admit one batch, `R` restraints, `C` platform clear, `D` drive enable, `Space` dispatch, hold the arrow keys for arm drive, `Z`/`X`/`B` for released/half/full gondola brake, `L` arm lock, `S` return to load, `T` empty-test permit, `M` call mechanic, `W` Aquafun pump, `P` fountain pattern, `[`/`]` jet height, `1`–`4` operating mode, `E` emergency stop and `F` fault reset.
 
 ## Run locally
 
@@ -32,6 +34,9 @@ The public client is configured in `js/config.js`. Run `supabase-schema.sql` onc
 - `js/services` — Supabase and Web Audio adapters
 - `js/core` — persistent settings
 - `js/simulator/state-machine.js` — deterministic ride/interlock logic
+- `js/simulator/topspin-physics.js` — fixed-step arm, pendulum and three-position brake dynamics
+- `js/simulator/guest-flow.js` — arrivals, committed batches, boarding and unloading lifecycle
+- `js/simulator/water-system.js` — pump, height, patterns and individually animated water jets
 - `js/simulator/scene.js` — Three.js scene and procedural ride model
 - `js/simulator/main.js` — console binding, telemetry and render loop
 - `vendor/three` — locally hosted Three.js r180 module and MIT license

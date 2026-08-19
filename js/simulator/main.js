@@ -6,6 +6,7 @@ applySettings();
 
 const q = selector => document.querySelector(selector);
 const qa = selector => [...document.querySelectorAll(selector)];
+const clampGauge = value => Math.round(Math.min(1, Math.max(0, value)) * 100);
 const controller = new RideController();
 const loader = q('#sim-loader');
 const seatLamps = [];
@@ -60,7 +61,6 @@ const controls = {
   platformClear: q('#platform'),
   drive: q('#drive'),
   water: q('#water'),
-  gondolaBrake: q('#gondola-brake'),
   armLock: q('#arm-lock'),
   cycleStop: q('#cycle-stop')
 };
@@ -74,8 +74,20 @@ controls.drive.addEventListener('click', () => controller.toggleDrive());
 controls.water.addEventListener('click', () => controller.toggleWater());
 controls.armLock.addEventListener('click', () => controller.toggleArmLock());
 controls.cycleStop.addEventListener('click', () => controller.requestCycleStop());
+q('#admit-batch').addEventListener('click', () => controller.admitNextBatch());
 q('#program').addEventListener('change', event => controller.setProgram(event.target.value));
 q('#arm-speed').addEventListener('change', event => controller.setArmSpeed(event.target.value));
+qa('[data-brake-mode]').forEach(button => {
+  button.addEventListener('click', () => controller.setBrakeMode(button.dataset.brakeMode, true));
+});
+q('#water-pattern').addEventListener('change', event => controller.setWaterMode(event.target.value));
+q('#water-height').addEventListener('change', event => controller.setWaterHeight(Number(event.target.value) / 100));
+q('#water-height').addEventListener('input', event => {
+  q('[data-telemetry="water-height"]').textContent = event.target.value;
+});
+qa('[data-water-zone]').forEach(button => {
+  button.addEventListener('click', () => controller.toggleWaterZone(button.dataset.waterZone));
+});
 q('#reset').addEventListener('click', () => controller.resetFault());
 q('#estop').addEventListener('click', () => {
   alarm();
@@ -114,22 +126,6 @@ for (const [selector, command] of holdControls) {
   element.addEventListener('pointercancel', end);
   element.addEventListener('blur', end);
 }
-
-const brakeStart = event => {
-  event?.preventDefault();
-  if (event?.pointerId !== undefined) {
-    try { controls.gondolaBrake.setPointerCapture(event.pointerId); } catch { /* no pointer capture */ }
-  }
-  if (controller.setGondolaBrake(true, true)) controls.gondolaBrake.classList.add('pressed');
-};
-const brakeEnd = () => {
-  controller.setGondolaBrake(false, false);
-  controls.gondolaBrake.classList.remove('pressed');
-};
-controls.gondolaBrake.addEventListener('pointerdown', brakeStart);
-controls.gondolaBrake.addEventListener('pointerup', brakeEnd);
-controls.gondolaBrake.addEventListener('pointercancel', brakeEnd);
-controls.gondolaBrake.addEventListener('blur', brakeEnd);
 
 function selectCamera(name) {
   const buttons = qa('.view-tabs button');
@@ -173,12 +169,32 @@ function keyboardAction(key) {
     case 'k': return controller.togglePower();
     case 'o': return controller.toggleRideOpen();
     case 'g': return controller.toggleLoadGate();
+    case 'a': return controller.admitNextBatch();
     case 'r': return controller.toggleRestraints();
     case 'c': return controller.confirmPlatform();
     case 'd': return controller.toggleDrive();
     case 'l': return controller.toggleArmLock();
     case 's': return controller.requestCycleStop();
     case 'w': return controller.toggleWater();
+    case 'z': selectConsolePage('motion'); return controller.setBrakeMode('RELEASED', true);
+    case 'x': selectConsolePage('motion'); return controller.setBrakeMode('HALF', true);
+    case 'b': selectConsolePage('motion'); return controller.setBrakeMode('FULL', true);
+    case '[': {
+      const next = Math.max(0, controller.state.waterHeightSetpoint - 0.1);
+      q('#water-height').value = Math.round(next * 100);
+      return controller.setWaterHeight(next);
+    }
+    case ']': {
+      const next = Math.min(1, controller.state.waterHeightSetpoint + 0.1);
+      q('#water-height').value = Math.round(next * 100);
+      return controller.setWaterHeight(next);
+    }
+    case 'p': {
+      const patterns = ['CURTAIN', 'CHASE', 'ALTERNATE', 'PULSE', 'AUTO'];
+      const next = patterns[(patterns.indexOf(controller.state.waterMode) + 1) % patterns.length];
+      q('#water-pattern').value = next;
+      return controller.setWaterMode(next);
+    }
     case 'e': alarm(); return controller.emergencyStop();
     case 'f': return controller.resetFault();
     case 'm': selectConsolePage('maintenance'); return controller.callMechanic();
@@ -196,15 +212,12 @@ const pressedKeys = new Set();
 document.addEventListener('keydown', event => {
   if (event.target.matches('input, select, textarea') || q('#help-dialog').open) return;
   const key = event.key.toLowerCase();
-  const controlled = [' ', 'arrowleft', 'arrowright', 'k', 'o', 'g', 'r', 'c', 'd', 'b', 'l', 's', 'w', 'e', 'f', 'm', 't', '1', '2', '3', '4', 'v'];
+  const controlled = [' ', 'arrowleft', 'arrowright', 'k', 'o', 'g', 'a', 'r', 'c', 'd', 'z', 'x', 'b', 'l', 's', 'w', '[', ']', 'p', 'e', 'f', 'm', 't', '1', '2', '3', '4', 'v'];
   if (!controlled.includes(key)) return;
   event.preventDefault();
   if (pressedKeys.has(key)) return;
   pressedKeys.add(key);
   if (key === ' ') controller.beginDispatch();
-  else if (key === 'b') {
-    if (controller.setGondolaBrake(true, true)) controls.gondolaBrake.classList.add('pressed');
-  }
   else if (key === 'arrowleft') {
     if (controller.hold('armReverse', true)) q('#arm-reverse').classList.add('pressed');
   } else if (key === 'arrowright') {
@@ -216,10 +229,6 @@ document.addEventListener('keyup', event => {
   const key = event.key.toLowerCase();
   pressedKeys.delete(key);
   if (key === ' ') controller.endDispatch();
-  if (key === 'b') {
-    controller.setGondolaBrake(false, false);
-    controls.gondolaBrake.classList.remove('pressed');
-  }
   if (key === 'arrowleft') {
     controller.hold('armReverse', false);
     q('#arm-reverse').classList.remove('pressed');
@@ -235,8 +244,7 @@ document.addEventListener('visibilitychange', () => {
   pressedKeys.clear();
   controller.hold('armReverse', false);
   controller.hold('armForward', false);
-  controller.setGondolaBrake(false, false);
-  controls.gondolaBrake.classList.remove('pressed');
+  controller.setBrakeMode('FULL', false);
   controller.endDispatch();
 });
 
@@ -277,13 +285,15 @@ function renderState(state, message, type) {
   setControlState(controls.restraints, state.restraints, restraintLabel);
   setControlState(controls.platformClear, state.platformClear, state.platformClear ? 'CLEAR' : 'NOT CLEAR');
   setControlState(controls.drive, state.drive, state.drive ? 'ENABLED' : 'DISABLED');
-  setControlState(controls.water, state.water, state.water ? 'ARMED' : 'DISABLED');
-  const brakeLabel = state.brakePressure > 0.05
-    ? `${Math.round(state.brakePressure * 100)}% PRESSURE`
-    : 'RELEASED — FREE SWING';
-  setControlState(controls.gondolaBrake, state.gondolaBrake, brakeLabel);
+  setControlState(controls.water, state.waterMaster, state.waterMaster ? 'RUNNING' : 'STOPPED');
   setControlState(controls.armLock, state.armLock, state.armLock ? 'ENGAGED' : 'RELEASED');
-  setControlState(controls.cycleStop, state.cycleStopRequested, state.cycleStopRequested ? state.returnStage : 'PRESS TO START');
+  setControlState(controls.cycleStop, state.cycleStopRequested, state.cycleStopRequested ? state.returnStage : 'PRESS ONCE — AUTOMATIC PARK');
+  qa('[data-brake-mode]').forEach(button => {
+    button.classList.toggle('active', button.dataset.brakeMode === state.brakeMode);
+  });
+  qa('[data-water-zone]').forEach(button => {
+    button.classList.toggle('active', Boolean(state.waterZones?.[button.dataset.waterZone]));
+  });
 
   q('#operation-mode').value = state.testMode ? 'test' : 'public';
   q('#demand-mode').value = state.demandMode;
@@ -294,6 +304,9 @@ function renderState(state, message, type) {
   controls.rideOpen.disabled = state.testMode;
   q('#demand-mode').disabled = state.testMode;
   q('#operation-mode').disabled = moving || state.onboard > 0 || state.boardingCount > 0 || state.loadGate;
+  q('#admit-batch').disabled = state.testMode || !state.loadGate || !state.safeAtLoad
+    || state.needsUnload || state.unloadingCount > 0 || state.boardingCount > 0
+    || state.loadBatchCommitted || state.queue <= 0 || state.onboard >= 38;
   q('#inject-fault').disabled = !state.testMode || !state.power || state.fault;
   q('#call-mechanic').disabled = !state.faultCode || state.faultCode === 'estop' || state.mechanicStatus !== 'CALL REQUIRED';
   q('#diagnose').disabled = state.mechanicStatus !== 'ON SITE';
@@ -309,8 +322,16 @@ function renderState(state, message, type) {
   q('#estop').classList.toggle('latched', state.estop);
   q('#program').disabled = moving;
   q('#arm-speed').disabled = moving;
-  qa('#arm-forward,#arm-reverse,#arm-lock,#gondola-brake').forEach(element => {
+  q('#water-pattern').value = state.waterMode;
+  q('#water-pattern').disabled = !state.power;
+  q('#water-height').disabled = !state.power;
+  qa('[data-water-zone]').forEach(element => { element.disabled = !state.power; });
+  qa('#arm-forward,#arm-reverse,#arm-lock,[data-brake-mode]').forEach(element => {
     element.classList.toggle('inhibited', state.program !== 'manual' || state.mode !== STATES.RUNNING);
+  });
+  qa('[data-brake-mode]').forEach(element => {
+    element.disabled = element.dataset.brakeMode !== 'FULL'
+      && (state.program !== 'manual' || state.mode !== STATES.RUNNING);
   });
   q('[data-status="entrance"]').textContent = state.rideOpen ? 'OPEN' : 'CLOSED';
 
@@ -340,6 +361,14 @@ function renderTelemetry(state) {
     qa(`[data-lamp="${name}"]`).forEach(lamp => lamp.classList.toggle('on', Boolean(active)));
   });
   dispatch.classList.toggle('ready', controller.canDispatch);
+  q('#admit-batch').disabled = state.testMode || !state.loadGate || !state.safeAtLoad
+    || state.needsUnload || state.unloadingCount > 0 || state.boardingCount > 0
+    || state.loadBatchCommitted || state.loadBatchRemaining > 0 || state.queue <= 0 || state.onboard >= 38;
+  qa('[data-brake-mode]').forEach(button => {
+    button.classList.toggle('active', button.dataset.brakeMode === state.brakeMode);
+  });
+  setControlState(controls.cycleStop, state.cycleStopRequested,
+    state.cycleStopRequested ? state.returnStage : 'PRESS ONCE — AUTOMATIC PARK');
   if (state.restraintProgress > 0 && state.restraintProgress < 1) {
     q('#restraints small').textContent = `${Math.round(state.restraintProgress * 100)}%`;
   } else {
@@ -355,6 +384,10 @@ function renderTelemetry(state) {
   q('[data-telemetry="rpm"]').textContent = Math.abs(state.rpm).toFixed(1);
   q('[data-telemetry="relative"]').textContent = state.relativeGondolaAngle.toFixed(0);
   q('[data-telemetry="brake"]').textContent = Math.round(state.brakePressure * 100);
+  q('[data-telemetry="arm-console"]').textContent = state.arm.toFixed(1);
+  q('[data-telemetry="rpm-console"]').textContent = Math.abs(state.rpm).toFixed(1);
+  q('[data-telemetry="relative-console"]').textContent = state.relativeGondolaAngle.toFixed(0);
+  q('[data-telemetry="brake-console"]').textContent = Math.round(state.brakePressure * 100);
   q('[data-telemetry="relative-rpm"]').textContent = Math.abs(state.relativeRpm).toFixed(1);
   q('[data-telemetry="brake-temp"]').textContent = Math.round(state.brakeTemperature);
   q('[data-telemetry="phase"]').textContent = state.pendulumPhase;
@@ -365,8 +398,22 @@ function renderTelemetry(state) {
   q('[data-telemetry="demand-level"]').textContent = state.demandLevel;
   q('[data-telemetry="next-arrival"]').textContent = state.rideOpen ? `${Math.ceil(state.nextArrival)}s` : '--';
   q('[data-telemetry="next-wave"]').textContent = state.rideOpen && state.demandMode === 'dynamic' ? `${Math.ceil(state.nextWaveIn)}s` : state.demandMode === 'dynamic' ? '--' : 'FIXED';
-  q('[data-telemetry="return-stage"]').textContent = state.returnStage;
+  q('[data-telemetry="guest-phase"]').textContent = state.guestPhase;
+  q('[data-telemetry="batch-remaining"]').textContent = state.loadBatchRemaining;
+  q('[data-telemetry="batch-target"]').textContent = state.loadBatchTarget;
+  q('[data-telemetry="platform-guests"]').textContent = state.platformGuests;
+  q('[data-telemetry="unloading"]').textContent = state.unloadingCount;
+  q('[data-telemetry="return-stage"]')?.replaceChildren(state.returnStage);
   q('[data-telemetry="return-stage-compact"]').textContent = state.returnStage;
+  q('[data-telemetry="brake-mode"]').textContent = state.brakeMode;
+  q('[data-telemetry="water-height"]').textContent = Math.round(state.waterHeightSetpoint * 100);
+  q('[data-telemetry="water-pressure"]').textContent = Math.round(state.waterPumpPressure * 100);
+  q('#brake-pressure-fill').style.width = `${Math.round(state.brakePressure * 100)}%`;
+  if (document.activeElement !== q('#water-height')) q('#water-height').value = Math.round(state.waterHeightSetpoint * 100);
+  q('[data-gauge="arm"]').style.setProperty('--gauge', `${clampGauge(Math.abs(state.arm) / 180)}%`);
+  q('[data-gauge="speed"]').style.setProperty('--gauge', `${clampGauge(Math.abs(state.rpm) / 28)}%`);
+  q('[data-gauge="relative"]').style.setProperty('--gauge', `${clampGauge(Math.abs(state.relativeGondolaAngle) / 180)}%`);
+  q('[data-gauge="brake"]').style.setProperty('--gauge', `${Math.round(state.brakePressure * 100)}%`);
   q('[data-telemetry="fault-name"]').textContent = state.faultName || 'All monitored systems normal';
   q('[data-telemetry="fault-severity"]').textContent = state.fault ? `${state.faultSeverity} / ${String(state.faultCode).toUpperCase()}` : 'SYSTEM AVAILABLE';
   q('#fault-display > span').textContent = state.fault ? 'LATCHED FAULT' : 'NO ACTIVE FAULT';
@@ -376,18 +423,6 @@ function renderTelemetry(state) {
   q('#repair-bar').style.width = `${Math.round(state.repairProgress * 100)}%`;
   q('[data-telemetry="next-fault"]').textContent = Number.isFinite(state.nextFaultIn) && state.power ? `${Math.ceil(state.nextFaultIn)}s` : '--';
 
-  const returnOrder = ['brake', 'arms', 'level', 'locks'];
-  let activeReturnIndex = -1;
-  if (state.returnStage === 'CONTROLLED BRAKING') activeReturnIndex = 0;
-  else if (state.returnStage === 'ARM PARKING') activeReturnIndex = 1;
-  else if (state.returnStage === 'GONDOLA LEVELLING') activeReturnIndex = 2;
-  else if (state.returnStage === 'APPLYING LOAD LOCKS') activeReturnIndex = 3;
-  const returnComplete = ['LOAD POSITION PROVED', 'PARKED & LOCKED'].includes(state.returnStage);
-  returnOrder.forEach((step, index) => {
-    const element = q(`[data-return-step="${step}"]`);
-    element.classList.toggle('active', index === activeReturnIndex);
-    element.classList.toggle('complete', returnComplete || activeReturnIndex > index);
-  });
   Object.entries(state.achievements).forEach(([name, complete]) => {
     q(`[data-challenge="${name}"]`)?.classList.toggle('complete', complete);
   });
@@ -396,8 +431,10 @@ function renderTelemetry(state) {
   if (state.mode === STATES.RUNNING && state.program === 'manual') {
     if (state.brakeTemperature > 175) {
       coach.textContent = 'Manual coach: brake temperature is high. Release the paddle and allow the disc to cool before the next capture.';
-    } else if (state.gondolaBrake) {
-      coach.textContent = 'Manual coach: the gondola is capturing to the arms. Release B before the crest to preserve its angular momentum.';
+    } else if (state.brakeMode === 'FULL') {
+      coach.textContent = 'FULL brake is capturing the gondola to the arms. Select RELEASED before the crest to preserve swing energy.';
+    } else if (state.brakeMode === 'HALF') {
+      coach.textContent = 'HALF brake is trimming relative speed without locking. Use it to calm an over-energetic swing or shape the next inversion.';
     } else if (state.pendulumPhase === 'BOTTOM' && Math.abs(state.relativeRpm) > 7) {
       coach.textContent = 'Manual coach: high speed through the bottom — reverse arm direction now, or use a short brake capture to add energy.';
     } else if (state.pendulumPhase === 'INVERTED') {
@@ -441,7 +478,8 @@ renderTelemetry(controller.snapshot());
 
 let previousFrame = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - previousFrame) / 1000);
+  const elapsed = (now - previousFrame) / 1000;
+  const dt = Number.isFinite(elapsed) && elapsed > 0 ? Math.min(0.05, elapsed) : 0;
   previousFrame = now;
   controller.tick(dt);
   const snapshot = controller.snapshot();

@@ -512,8 +512,17 @@ export class RideScene {
       this.ride.add(jet);
       const stream = this.mesh(new THREE.TubeGeometry(curve, 18, 0.047, 7, false), this.materials.water.clone(), jet, false);
       stream.material.opacity = 0.58;
+      const crown = this.mesh(new THREE.SphereGeometry(0.14, 9, 6), this.materials.splash.clone(), jet, false);
+      crown.position.set(0, 4.0, direction * 2.05);
+      crown.scale.set(1.5, 0.5, 1.5);
+      const baseSplash = this.mesh(new THREE.TorusGeometry(0.18, 0.025, 6, 18), this.materials.splash.clone(), jet, false);
+      baseSplash.rotation.x = Math.PI / 2;
+      baseSplash.position.y = 0.04;
       const nozzle = this.cylinder(0.13, 0.32, [0, 0.05, 0], this.materials.galvanised, jet, 14);
       nozzle.rotation.x = Math.PI / 2 - direction * 0.19;
+      jet.userData.stream = stream;
+      jet.userData.crown = crown;
+      jet.userData.baseSplash = baseSplash;
       jet.scale.y = 0.01;
       jet.visible = false;
       this.waterJets.push(jet);
@@ -871,10 +880,16 @@ export class RideScene {
     }
 
     const running = state.mode === 'CYCLE ACTIVE' || state.mode === 'RETURNING TO LOAD';
-    for (const jet of this.waterJets) {
-      const pulse = running && state.water ? 0.72 + Math.sin(now * 0.0035 + jet.userData.phase) * 0.22 : 0;
-      jet.visible = running && state.water;
-      jet.scale.y = THREE.MathUtils.lerp(jet.scale.y, pulse, Math.min(1, dt * 5));
+    for (let index = 0; index < this.waterJets.length; index += 1) {
+      const jet = this.waterJets[index];
+      const commandedHeight = clamp(state.waterJets?.[index] || 0, 0, 1);
+      jet.visible = commandedHeight > 0.018;
+      jet.scale.y = THREE.MathUtils.lerp(jet.scale.y, Math.max(0.01, commandedHeight), Math.min(1, dt * 5.5));
+      const shimmer = 0.68 + Math.sin(now * 0.008 + jet.userData.phase) * 0.2;
+      jet.userData.stream.material.opacity = clamp(commandedHeight * shimmer, 0.18, 0.72);
+      jet.userData.crown.material.opacity = commandedHeight * 0.45;
+      jet.userData.baseSplash.material.opacity = commandedHeight * 0.5;
+      jet.userData.crown.rotation.y += dt * (1.5 + commandedHeight * 2);
     }
     for (let index = 0; index < this.beacons.length; index += 1) {
       const flash = Math.max(0, Math.sin(now * 0.006 + index * Math.PI));
