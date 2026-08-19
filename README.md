@@ -8,7 +8,7 @@ The gondola and queue begin empty. Guests arrive in small parties only while the
 
 Select **Empty test cycle** to isolate the public entrance and dispatch without riders after normal safety proving. Pressing **Return to Load** starts an automatic controlled-stop sequence that brakes the motion, parks the arms, levels the gondola and proves the load locks before unloading. Random faults use a complete call-out loop: contact the mechanic, wait for arrival, diagnose the affected system, complete the repair and reset the latched circuit. Test mode also provides deliberate training-fault injection.
 
-The manual mode models the defining Top Spin interaction: motor-driven arms move the gondola pivot while gravity, pivot acceleration and inertia drive the independently swinging gondola. Manual cycles start free-swinging. HALF and FULL are momentary brake paddles: hold a button to apply it and release the button to return immediately to free swing. HALF adds friction without locking; FULL captures the gondola relative to the arms. Fixed integration steps, energy damping and speed envelopes keep the motion controllable without turning the gondola into a powered motor.
+The manual mode models the defining Top Spin interaction: motor-driven arms move the gondola pivot while gravity, pivot acceleration and inertia drive the independently swinging high-inertia gondola. Manual cycles start free-swinging. HALF and FULL are momentary brake paddles: hold a button to apply it and release the button to return immediately to free swing. HALF provides progressive friction without locking; FULL captures the gondola relative to the arms. To make an inversion, hold FULL with an arm direction to carry the gondola towards the crest, then release FULL while the arms continue. Fixed 240 Hz integration, controlled energy loss and speed envelopes keep the motion responsive without turning the gondola into a powered motor.
 
 The fountains are another momentary control: hold the button to run them and release it to stop. Pattern, height and left/centre/right zones remain available in Options without cluttering the main game screen.
 
@@ -42,5 +42,6 @@ The public client is configured in `js/config.js`. Run `supabase-schema.sql` onc
 - `js/simulator/main.js` — console binding, telemetry and render loop
 - `vendor/three` — locally hosted Three.js r180 module and MIT license
 - `assets/models` and `assets/audio` — production asset integration points
+- `tests` — deterministic brake, rocking and operator-controlled inversion regression tests
 
 This is an independent simulation project and is not affiliated with a ride manufacturer or theme park. It must not be used as real-world operator training.

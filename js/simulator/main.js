@@ -1,4 +1,4 @@
-import { RideController, STATES } from './state-machine.js';
+import { RideController, STATES } from './state-machine.js?v=11';
 import { click, alarm, updateRideAudio } from '../services/audio.js';
 import { applySettings } from '../core/settings.js';
 
@@ -24,7 +24,7 @@ function buildSeatMap() {
 
 async function initialiseScene() {
   try {
-    const { RideScene } = await import('./scene.js');
+    const { RideScene } = await import('./scene.js?v=11');
     scene = new RideScene(q('#ride-canvas'));
   } catch (error) {
     console.error('Ride scene initialisation failed:', error);
@@ -271,6 +271,7 @@ function renderTelemetry(state) {
   text('[data-telemetry="arm"]', state.arm.toFixed(1));
   text('[data-telemetry="rpm"]', Math.abs(state.rpm).toFixed(1));
   text('[data-telemetry="brake-mode"]', state.brakeMode);
+  text('[data-telemetry="brake-pressure"]', Math.round(state.brakePressure * 100));
   text('[data-telemetry="gforce"]', state.currentG.toFixed(1));
   text('[data-telemetry="happiness"]', Math.round(state.happiness));
   text('[data-telemetry="time"]', `${String(Math.floor(state.cycleElapsed / 60)).padStart(2, '0')}:${String(Math.floor(state.cycleElapsed % 60)).padStart(2, '0')}`);

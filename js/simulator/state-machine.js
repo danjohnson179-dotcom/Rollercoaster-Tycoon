@@ -1,6 +1,6 @@
-import { TopSpinPhysics } from './topspin-physics.js';
-import { GuestFlow } from './guest-flow.js';
-import { WaterSystem } from './water-system.js';
+import { TopSpinPhysics } from './topspin-physics.js?v=11';
+import { GuestFlow } from './guest-flow.js?v=11';
+import { WaterSystem } from './water-system.js?v=11';
 
 export const STATES = Object.freeze({
   CLOSED: 'RIDE CLOSED',

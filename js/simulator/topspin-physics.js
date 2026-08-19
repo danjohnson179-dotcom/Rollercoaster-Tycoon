@@ -4,6 +4,19 @@ const GRAVITY = 9.81;
 const ARM_RADIUS = 6.05;
 const PENDULUM_LENGTH = 2.72;
 
+// A Top Spin gondola is a broad, high-inertia body rather than a point mass on
+// a playground-swing rope. These two factors retain the arm-pivot excitation
+// that creates rotations while reducing the exaggerated gravity-only rocking
+// produced by a simple pendulum approximation.
+const GRAVITY_TORQUE_SCALE = 0.27;
+const PIVOT_EXCITATION_SCALE = 1.2;
+
+// Hydraulic response is intentionally quick. The brake button is a momentary
+// operator control, so a press needs to be felt immediately and a release must
+// dump pressure without leaving an invisible brake applied for several seconds.
+const BRAKE_APPLY_RATE = 7.5;
+const BRAKE_RELEASE_RATE = 10.5;
+
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const approach = (value, target, amount) => value + clamp(target - value, -amount, amount);
 const wrapDegrees = value => ((value + 180) % 360 + 360) % 360 - 180;
@@ -133,36 +146,47 @@ export class TopSpinPhysics {
         gondolaAcceleration = clamp(gondolaError * 3.25 - gondolaVelocity * 2.85, -3.5, 3.5);
       } else {
         gondolaAcceleration = (
-          -GRAVITY * Math.sin(gondolaAngle)
-          + pivotAccelerationZ * Math.cos(gondolaAngle)
-          - pivotAccelerationY * Math.sin(gondolaAngle)
+          -GRAVITY * GRAVITY_TORQUE_SCALE * Math.sin(gondolaAngle)
+          + PIVOT_EXCITATION_SCALE * (
+            pivotAccelerationZ * Math.cos(gondolaAngle)
+            - pivotAccelerationY * Math.sin(gondolaAngle)
+          )
         ) / PENDULUM_LENGTH;
 
-        // Bearing drag and aerodynamic losses prevent unrealistic runaway energy.
-        gondolaAcceleration -= gondolaVelocity * (0.075 + 0.022 * Math.abs(gondolaVelocity));
+        // Bearing and aerodynamic losses calm low-energy rocking without
+        // removing the momentum needed for a deliberately built inversion.
+        gondolaAcceleration -= gondolaVelocity * (0.18 + 0.03 * Math.abs(gondolaVelocity));
+        gondolaAcceleration -= Math.tanh(gondolaVelocity * 7) * 0.035;
 
         const relativeVelocity = gondolaVelocity - armVelocity;
         const demand = BRAKE_LEVELS[state.brakeMode];
-        const pressureRate = demand > state.brakePressure ? 2.85 : 5.4;
+        const pressureRate = demand > state.brakePressure
+          ? BRAKE_APPLY_RATE
+          : BRAKE_RELEASE_RATE;
         state.brakePressure = approach(state.brakePressure, demand, pressureRate * step);
 
         if (state.brakePressure > 0.015) {
-          const friction = -Math.tanh(relativeVelocity * 3.8) * (0.62 + state.brakePressure * 1.25);
-          const viscous = -relativeVelocity * (0.28 + state.brakePressure * 0.88);
-          let brakeAcceleration = (friction + viscous) * state.brakePressure * state.brakeFade;
+          // HALF is a genuine friction brake. Its strength is scaled by line
+          // pressure exactly once; the previous model scaled it twice, making
+          // half brake almost cosmetic at realistic gondola speeds.
+          const friction = -Math.tanh(relativeVelocity * 4.8) * 2.8;
+          const viscous = -relativeVelocity * 3;
+          let brakeAcceleration = (friction + viscous)
+            * state.brakePressure * state.brakeFade;
 
           // FULL brake captures an angle; HALF deliberately remains a friction brake.
-          if (state.brakeMode === 'FULL' && state.brakePressure > 0.58) {
+          if (state.brakeMode === 'FULL' && state.brakePressure > 0.16) {
             const relativeError = wrapDegrees(
               (state.gondolaAngle - state.armAngle) - this.brakeCapture
             ) * DEG;
-            const capture = -relativeError * 10.5 - relativeVelocity * 3.7;
-            brakeAcceleration += clamp(capture, -8.5, 8.5)
-              * ((state.brakePressure - 0.58) / 0.42) * state.brakeFade;
+            const capture = -relativeError * 30 - relativeVelocity * 11;
+            const captureBlend = clamp((state.brakePressure - 0.16) / 0.42, 0, 1);
+            brakeAcceleration += clamp(capture, -32, 32)
+              * captureBlend * state.brakeFade;
 
-            if (state.brakePressure > 0.985
-              && Math.abs(relativeVelocity) < 0.035
-              && Math.abs(relativeError) < 0.007) {
+            if (state.brakePressure > 0.96
+              && Math.abs(relativeVelocity) < 0.12
+              && Math.abs(relativeError) < 0.028) {
               gondolaAngle = (state.armAngle + this.brakeCapture) * DEG;
               gondolaVelocity = armVelocity;
               brakeAcceleration = 0;
@@ -178,7 +202,7 @@ export class TopSpinPhysics {
             260
           );
         } else {
-          state.brakePressure = approach(state.brakePressure, 0, 5.4 * step);
+          state.brakePressure = approach(state.brakePressure, 0, BRAKE_RELEASE_RATE * step);
           state.brakeTemperature = Math.max(22, state.brakeTemperature
             - Math.max(0, state.brakeTemperature - 22) * step * 0.026);
         }

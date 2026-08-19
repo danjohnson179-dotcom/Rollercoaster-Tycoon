@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/main.css">
-  <link rel="stylesheet" href="css/simulator.css?v=10">
+  <link rel="stylesheet" href="css/simulator.css?v=11">
 </head>
 <body class="simulator-page simulator-simple">
   <div id="sim-loader" class="sim-loader">
@@ -51,7 +51,7 @@
       <div class="rs-telemetry">
         <span><small>ARM</small><strong><span data-telemetry="arm">0.0</span>°</strong></span>
         <span><small>GONDOLA</small><strong><span data-telemetry="rpm">0.0</span> RPM</strong></span>
-        <span><small>BRAKE</small><strong><span data-telemetry="brake-mode">FULL</span></strong></span>
+        <span><small>BRAKE</small><strong><span data-telemetry="brake-mode">FULL</span> <span data-telemetry="brake-pressure">100</span>%</strong></span>
         <span><small>TIME</small><strong data-telemetry="time">00:00</strong></span>
         <span><small>FORCE</small><strong><span data-telemetry="gforce">1.0</span> G</strong></span>
         <span><small>HAPPY</small><strong><span data-telemetry="happiness">62</span>%</strong></span>
@@ -74,11 +74,11 @@
       </div>
 
       <div class="rs-control-group rs-motion">
-        <h2>MANUAL RIDE CONTROLS <span>PRESS &amp; HOLD</span></h2>
+        <h2>MANUAL RIDE CONTROLS <span>CAPTURE · LIFT · RELEASE</span></h2>
         <button class="rs-control rs-control--hold" id="arm-reverse"><span>◀</span><strong>ARM LEFT<small>HOLD</small></strong><kbd>←</kbd></button>
         <button class="rs-control rs-control--hold" id="arm-forward"><span>▶</span><strong>ARM RIGHT<small>HOLD</small></strong><kbd>→</kbd></button>
-        <button class="rs-control rs-control--brake" id="brake-half"><i></i><strong>HALF BRAKE<small>HOLD / RELEASE</small></strong><kbd>X</kbd></button>
-        <button class="rs-control rs-control--brake" id="brake-full"><i></i><strong>FULL BRAKE<small>HOLD / RELEASE</small></strong><kbd>B</kbd></button>
+        <button class="rs-control rs-control--brake" id="brake-half" title="Hold to trim gondola speed; release to free-swing"><i></i><strong>HALF BRAKE<small>DRAG / RELEASE</small></strong><kbd>X</kbd></button>
+        <button class="rs-control rs-control--brake" id="brake-full" title="Hold to capture the current gondola angle; release near the crest to rotate"><i></i><strong>FULL BRAKE<small>CAPTURE / RELEASE</small></strong><kbd>B</kbd></button>
         <button class="rs-control rs-control--water" id="water"><span>≋</span><strong>FOUNTAINS<small>HOLD</small></strong><kbd>W</kbd></button>
         <button class="rs-control rs-control--stop" id="cycle-stop"><span>■</span><strong>END CYCLE<small>RETURN TO LOAD</small></strong><kbd>S</kbd></button>
       </div>
@@ -114,7 +114,7 @@
         <p><kbd>←</kbd><kbd>→</kbd> Hold arms <kbd>X</kbd> Hold half brake <kbd>B</kbd> Hold full brake</p>
         <p><kbd>W</kbd> Hold fountains <kbd>S</kbd> End cycle <kbd>SPACE</kbd> Dispatch <kbd>E</kbd> E-stop</p>
         <p><kbd>V</kbd> Camera <kbd>T</kbd> Empty test <kbd>M</kbd> Mechanic <kbd>F</kbd> Fault reset</p>
-        <div class="rs-tip"><strong>MANUAL RIDE TIP</strong><span>The gondola always swings freely. Move the arms to build momentum. Hold HALF to trim the swing or FULL to capture it, then release the key to let it swing again.</span></div>
+        <div class="rs-tip"><strong>MANUAL FLIP</strong><span>Hold FULL and an arm direction to carry the gondola towards the top. Release FULL near the crest while keeping the arms moving. The gondola is then free to rotate. Hold HALF briefly to trim excess speed; it never locks the gondola.</span></div>
       </section>
       <section class="rs-maintenance">
         <h3>MAINTENANCE</h3>
@@ -127,6 +127,6 @@
   </dialog>
 
   <div id="toast-region" class="toasts" aria-live="polite"></div>
-  <script type="module" src="js/simulator/main.js"></script>
+  <script type="module" src="js/simulator/main.js?v=11"></script>
 </body>
 </html>
