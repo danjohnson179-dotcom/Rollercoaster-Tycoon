@@ -1,14 +1,16 @@
 # RideOps — Rollercoaster Operator Simulator
 
-A desktop-first browser game foundation for realistic theme-park ride operation. The current playable attraction is **Toxicator**, a procedural WebGL suspended Top Spin with a complete park opening/loading/cycle/unloading flow, 38 live seat circuits, automatic programmes, manual brake-and-momentum operation, enforced interlocks, animated guest movement, scoring and throughput challenges.
+A desktop-first browser game foundation for realistic theme-park ride operation. The current playable attraction is **Toxicator**, a procedural WebGL suspended Top Spin with a complete park opening/loading/cycle/unloading flow, 38 live seat circuits, automatic programmes, manual brake-and-momentum operation, enforced interlocks, animated guest movement, demand waves, empty test cycles, maintenance call-outs, scoring and throughput challenges.
 
 ## Toxicator operation
 
-The gondola begins empty. Energise the controls, open the queue entrance and then open the load gate. Guests leave the visible queue, walk up the access route and take centre-out assigned seats; the load gate is interlocked until every moving guest is seated. The queue entrance can be closed at any time without removing guests already waiting. Close the gate, close and prove the occupied restraints, confirm the platform, enable the main arm drive and hold dispatch. At the end of a cycle, open the restraints and load gate to unload before accepting the next group.
+The gondola and queue begin empty. Guests arrive in small parties only while the entrance is open, with dynamic quiet, steady, busy and surge periods rather than an instant pre-filled crowd. Guests leave the visible queue, walk up the access route and take centre-out assigned seats; the load gate is interlocked until every moving guest is seated. The entrance can be closed at any time without removing guests already waiting. Close the gate, close and prove the occupied restraints, confirm the platform, enable the main arm drive and hold dispatch.
+
+Select **Empty test cycle** to isolate the public entrance and dispatch without riders after normal safety proving. Pressing **Return to Load** starts an automatic controlled-stop sequence that brakes the motion, parks the arms, levels the gondola and proves the load locks before unloading. Random faults use a complete call-out loop: contact the mechanic, wait for arrival, diagnose the affected system, complete the repair and reset the latched circuit. Test mode also provides deliberate training-fault injection.
 
 The manual mode models the defining Top Spin interaction: motor-driven arms move the gondola pivot while gravity, pivot acceleration and inertia drive the independently swinging gondola. The integrator uses fixed substeps for stable momentum transfer and repeated inversions. A pressure-ramped hold brake captures the gondola relative to the arms, generates heat and can fade when abused; it is not treated as a second powered motor. Automatic modes provide three original ride sequences built from the same physics.
 
-Keyboard controls: `K` control key, `O` entrance, `G` load gate, `R` restraints, `C` platform clear, `D` drive enable, `Space` dispatch, hold the arrow keys for arm drive, hold `B` for gondola brake pressure, `L` arm lock, `S` stop/return, `W` water effects, `1`–`4` operating mode, `E` emergency stop and `F` fault reset.
+Keyboard controls: `K` control key, `O` entrance, `G` load gate, `R` restraints, `C` platform clear, `D` drive enable, `Space` dispatch, hold the arrow keys for arm drive, hold `B` for gondola brake pressure, `L` arm lock, `S` return to load, `T` toggle empty-test permit, `M` call mechanic, `W` water effects, `1`–`4` operating mode, `E` emergency stop and `F` fault reset.
 
 ## Run locally
 

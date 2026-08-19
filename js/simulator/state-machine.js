@@ -18,6 +18,28 @@ export const PROGRAMS = Object.freeze({
   sequence3: { label: 'Sequence 3 — Extreme', duration: 92, intensity: 3 }
 });
 
+export const FAULTS = Object.freeze({
+  gate_sensor: { label: 'Load-gate limit switch disagreement', system: 'platform', severity: 'SERVICE', repairTime: 14 },
+  restraint_channel: { label: 'Restraint prove channel B open', system: 'restraints', severity: 'SAFETY', repairTime: 18 },
+  arm_encoder: { label: 'Arm encoder reference lost', system: 'drive', severity: 'SAFETY', repairTime: 23 },
+  gondola_brake: { label: 'Gondola brake pressure transducer fault', system: 'brake', severity: 'SAFETY', repairTime: 26 },
+  water_pressure: { label: 'Water-effects pump pressure low', system: 'effects', severity: 'SERVICE', repairTime: 12 }
+});
+
+const DEMAND_PROFILES = Object.freeze({
+  quiet: { label: 'QUIET', rate: 0.11, maxParty: 1 },
+  steady: { label: 'STEADY', rate: 0.27, maxParty: 2 },
+  busy: { label: 'BUSY', rate: 0.5, maxParty: 3 },
+  surge: { label: 'SURGE', rate: 0.82, maxParty: 4 }
+});
+
+const FAULT_INTERVALS = Object.freeze({
+  off: [Infinity, Infinity],
+  low: [150, 280],
+  normal: [70, 125],
+  high: [22, 45]
+});
+
 const CAPACITY = 38;
 const DEG = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -92,7 +114,7 @@ export class RideController extends EventTarget {
       parkElapsed: 0,
       cycleStopRequested: false,
       water: true,
-      queue: 18,
+      queue: 0,
       onboard: 0,
       boardingCount: 0,
       boardingStarted: 0,
@@ -107,6 +129,25 @@ export class RideController extends EventTarget {
       continuousInversions: 0,
       maxContinuousInversions: 0,
       needsUnload: false,
+      testMode: false,
+      demandMode: 'dynamic',
+      demandLevel: 'CLOSED',
+      demandRate: 0,
+      nextArrival: 0,
+      nextWaveIn: 0,
+      totalArrivals: 0,
+      returnStage: 'PARKED',
+      unloadReady: true,
+      faultCode: null,
+      faultName: '',
+      faultSeverity: '',
+      faultRate: 'normal',
+      nextFaultIn: 90,
+      mechanicStatus: 'STANDBY',
+      mechanicETA: 0,
+      repairProgress: 0,
+      diagnosisSystem: '',
+      mechanicCallouts: 0,
       throughput: 0,
       achievements: {
         inversions3: false,
@@ -126,6 +167,33 @@ export class RideController extends EventTarget {
     this.previousInversionBand = 0;
     this.lastArmVelocity = 0;
     this.lastArmAcceleration = 0;
+    this.randomSeed = 0x5f3759df;
+    this.currentDemandLevel = 'quiet';
+    this.arrivalTimer = 3.5;
+    this.demandWaveTimer = 28;
+    this.faultTimer = 90;
+    this.repairTimer = 0;
+  }
+
+  random() {
+    this.randomSeed = (1664525 * this.randomSeed + 1013904223) >>> 0;
+    return this.randomSeed / 4294967296;
+  }
+
+  getReturnStage() {
+    const s = this.state;
+    if (s.fault) return 'FAULT HOLD';
+    if (s.mode === STATES.RETURNING) {
+      const armError = Math.abs(wrappedAngle(s.armAngle));
+      const gondolaError = Math.abs(wrappedAngle(s.gondolaAngle));
+      if (Math.abs(s.armVelocity) > 4 || Math.abs(s.gondolaVelocity) > 8) return 'CONTROLLED BRAKING';
+      if (armError > 4) return 'ARM PARKING';
+      if (gondolaError > 4) return 'GONDOLA LEVELLING';
+      return 'APPLYING LOAD LOCKS';
+    }
+    if (s.mode === STATES.COMPLETE && this.safeAtLoad) return 'LOAD POSITION PROVED';
+    if (s.mode === STATES.RUNNING) return 'CYCLE IN MOTION';
+    return this.safeAtLoad ? 'PARKED & LOCKED' : 'NOT AT LOAD';
   }
 
   snapshot() {
@@ -141,7 +209,9 @@ export class RideController extends EventTarget {
         : Math.abs(wrappedAngle(s.gondolaAngle)) > 145 ? 'INVERTED' : 'CLIMBING',
       capacity: CAPACITY,
       programmeLabel: PROGRAMS[s.program].label,
-      safeAtLoad: this.safeAtLoad
+      safeAtLoad: this.safeAtLoad,
+      returnStage: this.getReturnStage(),
+      unloadReady: this.safeAtLoad && s.mode === STATES.COMPLETE && s.onboard > 0
     };
   }
 
@@ -186,7 +256,7 @@ export class RideController extends EventTarget {
   get canDispatch() {
     const s = this.state;
     return Object.values(this.safetyCircuits).every(Boolean)
-      && s.onboard > 0
+      && (s.onboard > 0 || s.testMode)
       && this.safeAtLoad
       && s.mode !== STATES.RUNNING
       && s.mode !== STATES.RETURNING;
@@ -201,6 +271,7 @@ export class RideController extends EventTarget {
       return this.reject('Control power cannot be isolated until the platform is empty and the load gate is closed.');
     }
     s.power = !s.power;
+    if (s.power) this.resetFaultTimer();
     if (!s.power) {
       Object.assign(s, {
         rideOpen: false,
@@ -212,7 +283,7 @@ export class RideController extends EventTarget {
     }
     this.updateMode();
     this.emit(s.power
-      ? 'Control circuits energised. Open the ride entrance when ready.'
+      ? 'Control circuits energised. Select PUBLIC OPERATION or EMPTY TEST.'
       : 'Control power isolated. Ride secured closed.');
     return true;
   }
@@ -220,12 +291,54 @@ export class RideController extends EventTarget {
   toggleRideOpen() {
     const s = this.state;
     if (!s.power) return this.reject('Turn the control key before opening the ride.');
+    if (!s.rideOpen && s.testMode) return this.reject('Exit EMPTY TEST mode before opening the public queue.');
     s.rideOpen = !s.rideOpen;
+    if (s.rideOpen) {
+      this.currentDemandLevel = s.demandMode === 'dynamic' ? 'quiet' : s.demandMode;
+      this.arrivalTimer = 2.5 + this.random() * 3.5;
+      this.demandWaveTimer = 24 + this.random() * 20;
+    }
     if (![STATES.RUNNING, STATES.RETURNING].includes(s.mode)) s.platformClear = false;
     this.updateMode();
     this.emit(s.rideOpen
       ? 'Queue entrance opened. New guests are joining the waiting line.'
       : `Queue entrance closed. ${s.queue} waiting guests remain in the line.`);
+    return true;
+  }
+
+  setTestMode(active) {
+    const s = this.state;
+    if ([STATES.RUNNING, STATES.RETURNING].includes(s.mode) || s.onboard > 0 || s.boardingCount > 0 || s.loadGate) {
+      return this.reject('Operating status can only change with an empty gondola, closed load gate and stationary ride.');
+    }
+    s.testMode = Boolean(active);
+    if (s.testMode) s.rideOpen = false;
+    s.restraints = false;
+    s.restraintProgress = 0;
+    s.restraintProved = false;
+    s.platformClear = false;
+    s.drive = false;
+    this.updateMode();
+    this.emit(s.testMode
+      ? 'EMPTY TEST selected. The ride may dispatch without guests after normal safety proving.'
+      : 'PUBLIC OPERATION selected. At least one seated guest is required to dispatch.');
+    return true;
+  }
+
+  setDemandMode(mode) {
+    if (mode !== 'dynamic' && !DEMAND_PROFILES[mode]) return false;
+    this.state.demandMode = mode;
+    if (mode !== 'dynamic') this.currentDemandLevel = mode;
+    this.demandWaveTimer = 20 + this.random() * 25;
+    this.emit(`Guest demand set to ${mode === 'dynamic' ? 'dynamic park waves' : DEMAND_PROFILES[mode].label.toLowerCase()}.`);
+    return true;
+  }
+
+  setFaultRate(rate) {
+    if (!FAULT_INTERVALS[rate]) return false;
+    this.state.faultRate = rate;
+    this.resetFaultTimer();
+    this.emit(`Random fault frequency set to ${rate.toUpperCase()}.`);
     return true;
   }
 
@@ -240,7 +353,9 @@ export class RideController extends EventTarget {
     if (s.loadGate && s.boardingCount > 0) {
       return this.reject(`${s.boardingCount} guest${s.boardingCount === 1 ? ' is' : 's are'} still walking to the gondola.`);
     }
-    if (!s.rideOpen && s.queue === 0 && !s.needsUnload) return this.reject('There are no waiting guests to load. Open the queue entrance first.');
+    if (!s.loadGate && !s.rideOpen && s.queue === 0 && !s.needsUnload && !s.testMode) {
+      return this.reject('There are no waiting guests to load. Open the queue entrance first.');
+    }
     s.loadGate = !s.loadGate;
     s.platformClear = false;
     if (s.loadGate) {
@@ -265,7 +380,7 @@ export class RideController extends EventTarget {
       return this.reject('Restraints are mechanically locked during motion.');
     }
     if (!this.safeAtLoad) return this.reject('Restraints are inhibited away from load position.');
-    if (!s.restraints && s.onboard === 0) return this.reject('There are no guests to secure.');
+    if (!s.restraints && s.onboard === 0 && !s.testMode) return this.reject('There are no guests to secure. Select EMPTY TEST to prove an unloaded gondola.');
     s.restraints = !s.restraints;
     s.restraintProved = false;
     s.platformClear = false;
@@ -281,7 +396,7 @@ export class RideController extends EventTarget {
     if (!s.power) return this.reject('Control power is required.');
     if (s.loadGate) return this.reject('Close the load gate before confirming platform clear.');
     if (!s.restraintProved || !s.restraints) return this.reject('All occupied-seat restraint circuits must prove first.');
-    if (s.onboard === 0) return this.reject('Platform check cannot be completed with an empty gondola.');
+    if (s.onboard === 0 && !s.testMode) return this.reject('Platform check cannot be completed with an empty gondola unless EMPTY TEST is selected.');
     s.platformClear = !s.platformClear;
     this.updateMode();
     this.emit(s.platformClear
@@ -413,18 +528,11 @@ export class RideController extends EventTarget {
   requestCycleStop() {
     const s = this.state;
     if (s.mode !== STATES.RUNNING) return this.reject('There is no active cycle to stop.');
-    if (s.program !== 'manual') {
-      s.mode = STATES.RETURNING;
-      this.holds.clear();
-      this.emit('Automatic sequence cancelled. Service return to load position started.');
-      return true;
-    }
     s.cycleStopRequested = true;
-    if (this.safeAtLoad) {
-      this.completeCycle();
-      return true;
-    }
-    this.emit('Manual stop requested. Return both arms and gondola upright, then engage both locks.');
+    s.mode = STATES.RETURNING;
+    s.armLock = false;
+    this.holds.clear();
+    this.emit('RETURN TO LOAD accepted. Controlled braking, arm parking, gondola levelling and load locks are automatic.');
     return true;
   }
 
@@ -433,6 +541,10 @@ export class RideController extends EventTarget {
     if (!s.estop) {
       s.estop = true;
       s.fault = true;
+      s.faultCode = 'estop';
+      s.faultName = 'Emergency-stop circuit latched';
+      s.faultSeverity = 'EMERGENCY';
+      s.mechanicStatus = 'RELEASE E-STOP';
       s.mode = STATES.FAULT;
       s.drive = false;
       s.armLock = true;
@@ -441,6 +553,7 @@ export class RideController extends EventTarget {
       this.emit('EMERGENCY STOP LATCHED — service braking active.', 'error');
     } else {
       s.estop = false;
+      s.mechanicStatus = 'RESET REQUIRED';
       this.emit('Emergency stop released. Press FAULT RESET after all motion has stopped.');
     }
     return true;
@@ -450,14 +563,135 @@ export class RideController extends EventTarget {
     const s = this.state;
     if (s.estop) return this.reject('Release the emergency stop before resetting the fault circuit.');
     if (!this.stationary) return this.reject('Fault reset denied while the ride is moving.');
+    if (s.faultCode && s.faultCode !== 'estop' && s.mechanicStatus !== 'AWAITING RESET') {
+      return this.reject('Fault reset denied. A mechanic must diagnose and complete the repair first.');
+    }
     s.fault = false;
+    s.faultCode = null;
+    s.faultName = '';
+    s.faultSeverity = '';
+    s.mechanicStatus = 'STANDBY';
+    s.mechanicETA = 0;
+    s.repairProgress = 0;
+    s.diagnosisSystem = '';
     s.drive = false;
     s.platformClear = false;
     s.armLock = true;
     this.applyBrake(true);
-    s.mode = s.rideOpen ? STATES.CHECKING : STATES.CLOSED;
-    this.emit('Fault circuit reset. Re-establish the platform and drive checks.');
+    if (!this.safeAtLoad) {
+      s.mode = STATES.RETURNING;
+      s.armLock = false;
+      this.emit('Fault reset accepted. Controlled recovery to load position has started.');
+    } else {
+      this.updateMode();
+      this.emit('Fault circuit reset. Re-establish the platform and drive checks.');
+    }
+    this.resetFaultTimer();
     return true;
+  }
+
+  resetFaultTimer() {
+    const range = FAULT_INTERVALS[this.state.faultRate];
+    this.faultTimer = Number.isFinite(range[0])
+      ? range[0] + this.random() * (range[1] - range[0])
+      : Infinity;
+    this.state.nextFaultIn = this.faultTimer;
+  }
+
+  triggerFault(code, source = 'random') {
+    const definition = FAULTS[code];
+    const s = this.state;
+    if (!definition || s.fault || !s.power) return false;
+    s.fault = true;
+    s.faultCode = code;
+    s.faultName = definition.label;
+    s.faultSeverity = definition.severity;
+    s.mechanicStatus = 'CALL REQUIRED';
+    s.mechanicETA = 0;
+    s.repairProgress = 0;
+    s.diagnosisSystem = '';
+    s.mode = STATES.FAULT;
+    s.drive = false;
+    s.platformClear = false;
+    s.armLock = true;
+    this.applyBrake(true);
+    this.holds.clear();
+    this.emit(`${definition.severity} FAULT ${code.toUpperCase()}: ${definition.label}. Stop operation and call maintenance.`, 'error');
+    if (source === 'random') this.resetFaultTimer();
+    return true;
+  }
+
+  injectFault(code) {
+    if (!this.state.testMode) return this.reject('Fault simulation is available in EMPTY TEST mode only.');
+    return this.triggerFault(code, 'test');
+  }
+
+  callMechanic() {
+    const s = this.state;
+    if (!s.faultCode || s.faultCode === 'estop') return this.reject('There is no maintenance fault requiring a callout.');
+    if (s.mechanicStatus !== 'CALL REQUIRED') return this.reject(`Maintenance status is already ${s.mechanicStatus}.`, 2);
+    s.mechanicStatus = 'EN ROUTE';
+    s.mechanicETA = Math.round(10 + this.random() * 18);
+    s.mechanicCallouts += 1;
+    this.emit(`Maintenance control contacted. Technician ETA ${s.mechanicETA} seconds.`);
+    return true;
+  }
+
+  diagnoseFault(system) {
+    const s = this.state;
+    const definition = FAULTS[s.faultCode];
+    if (!definition) return this.reject('No diagnostic fault is active.');
+    if (s.mechanicStatus !== 'ON SITE') return this.reject('Wait for the mechanic to arrive before authorising diagnostic work.');
+    s.diagnosisSystem = system;
+    if (system !== definition.system) {
+      s.score = Math.max(0, s.score - 75);
+      this.emit(`No defect found in ${system.toUpperCase()}. Select another system; callout time has increased.`, 'error');
+      return false;
+    }
+    s.mechanicStatus = 'REPAIRING';
+    this.repairTimer = definition.repairTime;
+    s.repairProgress = 0;
+    this.emit(`${definition.system.toUpperCase()} fault confirmed. Repair authorised; estimated work time ${definition.repairTime} seconds.`);
+    return true;
+  }
+
+  tickMaintenance(dt) {
+    const s = this.state;
+    if (s.mechanicStatus === 'EN ROUTE') {
+      s.mechanicETA = Math.max(0, s.mechanicETA - dt);
+      if (s.mechanicETA <= 0) {
+        s.mechanicStatus = 'ON SITE';
+        this.emit('Mechanic on site. Select the suspected system and authorise diagnosis.');
+      }
+    } else if (s.mechanicStatus === 'REPAIRING') {
+      this.repairTimer = Math.max(0, this.repairTimer - dt);
+      const duration = FAULTS[s.faultCode]?.repairTime || 15;
+      s.repairProgress = 1 - this.repairTimer / duration;
+      if (this.repairTimer <= 0) {
+        s.repairProgress = 1;
+        s.mechanicStatus = 'AWAITING RESET';
+        this.emit('Repair complete and tested. Press FAULT RESET to clear the latched circuit.');
+      }
+    }
+  }
+
+  tickRandomFaults(dt) {
+    const s = this.state;
+    if (!s.power || s.fault || s.faultRate === 'off') {
+      s.nextFaultIn = s.faultRate === 'off' ? Infinity : this.faultTimer;
+      return;
+    }
+    if (s.brakeTemperature > 245) {
+      this.triggerFault('gondola_brake');
+      return;
+    }
+    this.faultTimer -= dt;
+    s.nextFaultIn = Math.max(0, this.faultTimer);
+    if (this.faultTimer <= 0) {
+      const codes = Object.keys(FAULTS);
+      const code = codes[Math.floor(this.random() * codes.length)];
+      this.triggerFault(code);
+    }
   }
 
   updateMode() {
@@ -468,6 +702,7 @@ export class RideController extends EventTarget {
     else if (s.loadGate) s.mode = s.needsUnload && s.onboard > 0 ? STATES.UNLOADING : STATES.BOARDING;
     else if (this.canDispatch) s.mode = STATES.READY;
     else if (s.onboard > 0) s.mode = STATES.CHECKING;
+    else if (s.testMode) s.mode = STATES.CHECKING;
     else if (!s.rideOpen && s.queue === 0) s.mode = STATES.CLOSED;
     else s.mode = STATES.WAITING;
   }
@@ -484,15 +719,49 @@ export class RideController extends EventTarget {
     return sequence?.find(step => s.cycleElapsed < step.until) || null;
   }
 
+  advanceDemandWave() {
+    const mode = this.state.demandMode;
+    if (mode !== 'dynamic') {
+      this.currentDemandLevel = mode;
+      this.demandWaveTimer = 35 + this.random() * 30;
+      return;
+    }
+    const transitions = {
+      quiet: ['quiet', 'steady', 'steady', 'busy'],
+      steady: ['quiet', 'steady', 'busy', 'busy', 'surge'],
+      busy: ['steady', 'busy', 'busy', 'surge'],
+      surge: ['busy', 'busy', 'steady']
+    };
+    const choices = transitions[this.currentDemandLevel] || transitions.quiet;
+    this.currentDemandLevel = choices[Math.floor(this.random() * choices.length)];
+    this.demandWaveTimer = 28 + this.random() * 48;
+  }
+
   tickGuests(dt) {
     const s = this.state;
     if (s.rideOpen) {
       s.parkElapsed += dt;
-      this.arrivalAccumulator += dt * (0.32 + Math.min(0.18, s.cycles * 0.015));
-      while (this.arrivalAccumulator >= 1 && s.queue < 80) {
-        s.queue += 1;
-        this.arrivalAccumulator -= 1;
+      this.demandWaveTimer -= dt;
+      if (this.demandWaveTimer <= 0) this.advanceDemandWave();
+      const profile = DEMAND_PROFILES[this.currentDemandLevel] || DEMAND_PROFILES.quiet;
+      s.demandLevel = profile.label;
+      s.demandRate = profile.rate;
+      s.nextWaveIn = Math.max(0, this.demandWaveTimer);
+      this.arrivalTimer -= dt;
+      if (this.arrivalTimer <= 0 && s.queue < 80) {
+        const partySize = 1 + Math.floor(this.random() * profile.maxParty);
+        const admitted = Math.min(partySize, 80 - s.queue);
+        s.queue += admitted;
+        s.totalArrivals += admitted;
+        const baseInterval = 1 / profile.rate;
+        this.arrivalTimer = baseInterval * (0.62 + this.random() * 0.86);
       }
+      s.nextArrival = Math.max(0, this.arrivalTimer);
+    } else {
+      s.demandLevel = 'CLOSED';
+      s.demandRate = 0;
+      s.nextArrival = this.arrivalTimer;
+      s.nextWaveIn = this.demandWaveTimer;
     }
 
     for (let index = this.boardingTransfers.length - 1; index >= 0; index -= 1) {
@@ -539,7 +808,7 @@ export class RideController extends EventTarget {
     s.restraintProgress = approach(s.restraintProgress, target, dt * 0.72);
     if (s.restraints && s.restraintProgress >= 0.999) {
       s.restraintProgress = 1;
-      s.restraintProved = s.onboard > 0;
+      s.restraintProved = s.onboard > 0 || s.testMode;
     }
     if (!s.restraints && s.restraintProgress <= 0.001) {
       s.restraintProgress = 0;
@@ -732,11 +1001,13 @@ export class RideController extends EventTarget {
     s.platformClear = false;
     s.armLock = true;
     s.cycleStopRequested = false;
-    s.needsUnload = true;
+    s.needsUnload = s.onboard > 0;
     s.cycles += 1;
     s.score += 250 + s.inversions * 40 + Math.round(s.happiness * 2);
     this.holds.clear();
-    this.emit(`Cycle complete: ${s.inversions} inversions, ${s.maxG.toFixed(1)}G peak, ${Math.round(s.happiness)}% guest happiness. Open restraints to unload.`);
+    this.emit(s.onboard > 0
+      ? `Cycle complete: ${s.inversions} inversions, ${s.maxG.toFixed(1)}G peak, ${Math.round(s.happiness)}% guest happiness. LOAD POSITION PROVED — open restraints to unload.`
+      : `Empty test complete: ${s.inversions} inversions and ${s.maxG.toFixed(1)}G peak. LOAD POSITION PROVED — no unload required.`);
   }
 
   tick(dt) {
@@ -744,6 +1015,8 @@ export class RideController extends EventTarget {
     this.tickRestraints(dt);
     this.tickGuests(dt);
     this.tickMotion(dt);
+    this.tickMaintenance(dt);
+    this.tickRandomFaults(dt);
     s.throughput = s.parkElapsed > 10 ? Math.round(s.guestsServed / s.parkElapsed * 3600) : 0;
     this.dispatchEvent(new CustomEvent('tick', { detail: this.snapshot() }));
   }

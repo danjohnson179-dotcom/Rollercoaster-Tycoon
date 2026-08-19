@@ -143,6 +143,31 @@ qa('.view-tabs button').forEach(button => {
   button.addEventListener('click', () => selectCamera(button.dataset.camera));
 });
 
+function selectConsolePage(page) {
+  const consoleElement = q('.console');
+  const changed = consoleElement.dataset.activePanel !== page;
+  consoleElement.dataset.activePanel = page;
+  qa('[data-console-tab]').forEach(button => {
+    button.classList.toggle('active', button.dataset.consoleTab === page);
+  });
+  if (changed) consoleElement.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+qa('[data-console-tab]').forEach(button => {
+  button.addEventListener('click', () => selectConsolePage(button.dataset.consoleTab));
+});
+selectConsolePage('operate');
+
+q('#operation-mode').addEventListener('change', event => {
+  const accepted = controller.setTestMode(event.target.value === 'test');
+  if (!accepted) event.target.value = controller.state.testMode ? 'test' : 'public';
+});
+q('#demand-mode').addEventListener('change', event => controller.setDemandMode(event.target.value));
+q('#fault-rate').addEventListener('change', event => controller.setFaultRate(event.target.value));
+q('#call-mechanic').addEventListener('click', () => controller.callMechanic());
+q('#diagnose').addEventListener('click', () => controller.diagnoseFault(q('#diagnosis-system').value));
+q('#inject-fault').addEventListener('click', () => controller.injectFault(q('#fault-inject').value));
+
 function keyboardAction(key) {
   switch (key) {
     case 'k': return controller.togglePower();
@@ -156,6 +181,8 @@ function keyboardAction(key) {
     case 'w': return controller.toggleWater();
     case 'e': alarm(); return controller.emergencyStop();
     case 'f': return controller.resetFault();
+    case 'm': selectConsolePage('maintenance'); return controller.callMechanic();
+    case 't': return controller.setTestMode(!controller.state.testMode);
     case '1': q('#program').value = 'manual'; return controller.setProgram('manual');
     case '2': q('#program').value = 'sequence1'; return controller.setProgram('sequence1');
     case '3': q('#program').value = 'sequence2'; return controller.setProgram('sequence2');
@@ -169,7 +196,7 @@ const pressedKeys = new Set();
 document.addEventListener('keydown', event => {
   if (event.target.matches('input, select, textarea') || q('#help-dialog').open) return;
   const key = event.key.toLowerCase();
-  const controlled = [' ', 'arrowleft', 'arrowright', 'k', 'o', 'g', 'r', 'c', 'd', 'b', 'l', 's', 'w', 'e', 'f', '1', '2', '3', '4', 'v'];
+  const controlled = [' ', 'arrowleft', 'arrowright', 'k', 'o', 'g', 'r', 'c', 'd', 'b', 'l', 's', 'w', 'e', 'f', 'm', 't', '1', '2', '3', '4', 'v'];
   if (!controlled.includes(key)) return;
   event.preventDefault();
   if (pressedKeys.has(key)) return;
@@ -225,13 +252,20 @@ function setControlState(element, active, label) {
 
 function renderState(state, message, type) {
   const moving = [STATES.RUNNING, STATES.RETURNING].includes(state.mode);
-  document.body.className = `sim-page ${moving ? 'state-running' : state.fault ? 'state-fault' : 'state-idle'}`;
+  document.body.classList.toggle('state-running', moving);
+  document.body.classList.toggle('state-fault', state.fault);
+  document.body.classList.toggle('state-idle', !moving && !state.fault);
   q('#state-label').lastChild.textContent = ` ${state.mode}`;
   q('#score').textContent = state.score.toLocaleString('en-GB');
 
-  const lamps = { ...controller.safetyCircuits, fault: state.fault };
+  const lamps = {
+    ...controller.safetyCircuits,
+    fault: state.fault,
+    test: state.testMode,
+    loadReady: state.safeAtLoad
+  };
   Object.entries(lamps).forEach(([name, active]) => {
-    q(`[data-lamp="${name}"]`)?.classList.toggle('on', Boolean(active));
+    qa(`[data-lamp="${name}"]`).forEach(lamp => lamp.classList.toggle('on', Boolean(active)));
   });
 
   setControlState(controls.power, state.power, state.power ? 'ON' : 'OFF');
@@ -249,7 +283,27 @@ function renderState(state, message, type) {
     : 'RELEASED — FREE SWING';
   setControlState(controls.gondolaBrake, state.gondolaBrake, brakeLabel);
   setControlState(controls.armLock, state.armLock, state.armLock ? 'ENGAGED' : 'RELEASED');
-  setControlState(controls.cycleStop, state.cycleStopRequested, state.cycleStopRequested ? 'RETURN REQUESTED' : 'SEQUENCE STOP');
+  setControlState(controls.cycleStop, state.cycleStopRequested, state.cycleStopRequested ? state.returnStage : 'PRESS TO START');
+
+  q('#operation-mode').value = state.testMode ? 'test' : 'public';
+  q('#demand-mode').value = state.demandMode;
+  q('#fault-rate').value = state.faultRate;
+  q('#operation-permit-note').innerHTML = state.testMode
+    ? '<strong>EMPTY TEST</strong> Public entry is isolated. An empty gondola may be dispatched after safety proving.'
+    : '<strong>PUBLIC</strong> Guests arrive gradually only while the queue entrance is open.';
+  controls.rideOpen.disabled = state.testMode;
+  q('#demand-mode').disabled = state.testMode;
+  q('#operation-mode').disabled = moving || state.onboard > 0 || state.boardingCount > 0 || state.loadGate;
+  q('#inject-fault').disabled = !state.testMode || !state.power || state.fault;
+  q('#call-mechanic').disabled = !state.faultCode || state.faultCode === 'estop' || state.mechanicStatus !== 'CALL REQUIRED';
+  q('#diagnose').disabled = state.mechanicStatus !== 'ON SITE';
+  q('#diagnosis-system').disabled = state.mechanicStatus !== 'ON SITE';
+  q('[data-console-tab="maintenance"]').classList.toggle('alarm', state.fault);
+  q('#fault-display').classList.toggle('active', state.fault);
+  if (state.fault && type === 'error') {
+    selectConsolePage('maintenance');
+    q('.console').scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   dispatch.classList.toggle('ready', controller.canDispatch);
   q('#estop').classList.toggle('latched', state.estop);
@@ -276,9 +330,14 @@ function renderState(state, message, type) {
 function renderTelemetry(state) {
   q('#state-label').lastChild.textContent = ` ${state.mode}`;
   q('#score').textContent = state.score.toLocaleString('en-GB');
-  const liveLamps = { ...controller.safetyCircuits, fault: state.fault };
+  const liveLamps = {
+    ...controller.safetyCircuits,
+    fault: state.fault,
+    test: state.testMode,
+    loadReady: state.safeAtLoad
+  };
   Object.entries(liveLamps).forEach(([name, active]) => {
-    q(`[data-lamp="${name}"]`)?.classList.toggle('on', Boolean(active));
+    qa(`[data-lamp="${name}"]`).forEach(lamp => lamp.classList.toggle('on', Boolean(active)));
   });
   dispatch.classList.toggle('ready', controller.canDispatch);
   if (state.restraintProgress > 0 && state.restraintProgress < 1) {
@@ -303,6 +362,32 @@ function renderTelemetry(state) {
   q('[data-telemetry="time"]').textContent = `${String(Math.floor(state.cycleElapsed / 60)).padStart(2, '0')}:${String(Math.floor(state.cycleElapsed % 60)).padStart(2, '0')}`;
   q('[data-telemetry="gforce"]').textContent = state.currentG.toFixed(1);
   q('[data-telemetry="happiness"]').textContent = Math.round(state.happiness);
+  q('[data-telemetry="demand-level"]').textContent = state.demandLevel;
+  q('[data-telemetry="next-arrival"]').textContent = state.rideOpen ? `${Math.ceil(state.nextArrival)}s` : '--';
+  q('[data-telemetry="next-wave"]').textContent = state.rideOpen && state.demandMode === 'dynamic' ? `${Math.ceil(state.nextWaveIn)}s` : state.demandMode === 'dynamic' ? '--' : 'FIXED';
+  q('[data-telemetry="return-stage"]').textContent = state.returnStage;
+  q('[data-telemetry="return-stage-compact"]').textContent = state.returnStage;
+  q('[data-telemetry="fault-name"]').textContent = state.faultName || 'All monitored systems normal';
+  q('[data-telemetry="fault-severity"]').textContent = state.fault ? `${state.faultSeverity} / ${String(state.faultCode).toUpperCase()}` : 'SYSTEM AVAILABLE';
+  q('#fault-display > span').textContent = state.fault ? 'LATCHED FAULT' : 'NO ACTIVE FAULT';
+  q('[data-telemetry="mechanic-status"]').textContent = state.mechanicStatus;
+  q('[data-telemetry="mechanic-eta"]').textContent = state.mechanicStatus === 'EN ROUTE' ? `${Math.ceil(state.mechanicETA)}s` : '--';
+  q('[data-telemetry="repair-progress"]').textContent = `${Math.round(state.repairProgress * 100)}%`;
+  q('#repair-bar').style.width = `${Math.round(state.repairProgress * 100)}%`;
+  q('[data-telemetry="next-fault"]').textContent = Number.isFinite(state.nextFaultIn) && state.power ? `${Math.ceil(state.nextFaultIn)}s` : '--';
+
+  const returnOrder = ['brake', 'arms', 'level', 'locks'];
+  let activeReturnIndex = -1;
+  if (state.returnStage === 'CONTROLLED BRAKING') activeReturnIndex = 0;
+  else if (state.returnStage === 'ARM PARKING') activeReturnIndex = 1;
+  else if (state.returnStage === 'GONDOLA LEVELLING') activeReturnIndex = 2;
+  else if (state.returnStage === 'APPLYING LOAD LOCKS') activeReturnIndex = 3;
+  const returnComplete = ['LOAD POSITION PROVED', 'PARKED & LOCKED'].includes(state.returnStage);
+  returnOrder.forEach((step, index) => {
+    const element = q(`[data-return-step="${step}"]`);
+    element.classList.toggle('active', index === activeReturnIndex);
+    element.classList.toggle('complete', returnComplete || activeReturnIndex > index);
+  });
   Object.entries(state.achievements).forEach(([name, complete]) => {
     q(`[data-challenge="${name}"]`)?.classList.toggle('complete', complete);
   });

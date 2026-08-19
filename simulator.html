@@ -50,7 +50,7 @@
 
       <div class="operations-strip">
         <div><small>ENTRANCE</small><strong data-status="entrance">CLOSED</strong></div>
-        <div><small>QUEUE</small><strong><span data-telemetry="queue">18</span> GUESTS</strong></div>
+        <div><small>QUEUE</small><strong><span data-telemetry="queue">0</span> GUESTS</strong></div>
         <div><small>ON RIDE</small><strong><span data-telemetry="onboard">0</span> / 38</strong></div>
         <div><small>THROUGHPUT</small><strong><span data-telemetry="throughput">0</span> PPH</strong></div>
       </div>
@@ -83,10 +83,31 @@
         <p>Turn the control key to begin opening checks.</p>
       </div>
 
-      <section class="panel-section passenger-section">
-        <h2>Guest operation <span>01</span></h2>
+      <nav class="console-tabs" aria-label="Operator console pages">
+        <button class="active" data-console-tab="operate"><span>01</span> Operation</button>
+        <button data-console-tab="motion"><span>02</span> Motion</button>
+        <button data-console-tab="maintenance"><span>03</span> Maintenance <i></i></button>
+      </nav>
+
+      <section class="panel-section passenger-section" data-console-panel="operate">
+        <h2>Guest demand <span>01 / A</span></h2>
+        <div class="demand-control">
+          <label class="console-select">
+            CROWD MODEL
+            <select id="demand-mode">
+              <option value="dynamic">Dynamic park waves</option>
+              <option value="quiet">Quiet</option>
+              <option value="steady">Steady</option>
+              <option value="busy">Busy</option>
+              <option value="surge">Peak surge</option>
+            </select>
+          </label>
+          <div><small>DEMAND</small><strong data-telemetry="demand-level">CLOSED</strong></div>
+          <div><small>NEXT PARTY</small><strong data-telemetry="next-arrival">--</strong></div>
+          <div><small>NEXT WAVE</small><strong data-telemetry="next-wave">--</strong></div>
+        </div>
         <div class="guest-summary">
-          <div><small>WAITING</small><strong data-telemetry="queue">18</strong></div>
+          <div><small>WAITING</small><strong data-telemetry="queue">0</strong></div>
           <div><small>WALKING</small><strong data-telemetry="boarding">0</strong></div>
           <div><small>SEATED</small><strong><span data-telemetry="onboard">0</span>/38</strong></div>
           <div><small>SERVED</small><strong data-telemetry="served">0</strong></div>
@@ -103,8 +124,8 @@
         </div>
       </section>
 
-      <section class="panel-section">
-        <h2>Safety circuits <span>02</span></h2>
+      <section class="panel-section" data-console-panel="operate">
+        <h2>Safety circuits <span>01 / B</span></h2>
         <div class="annunciators annunciators--six">
           <div data-lamp="power"><i></i>Control power</div>
           <div data-lamp="gate"><i></i>Load gate closed</div>
@@ -113,11 +134,23 @@
           <div data-lamp="brake"><i></i>Gondola brake</div>
           <div data-lamp="drive"><i></i>Drive ready</div>
           <div data-lamp="fault"><i></i>System fault</div>
+          <div data-lamp="test"><i></i>Empty test permit</div>
+          <div data-lamp="loadReady"><i></i>Load position</div>
         </div>
       </section>
 
-      <section class="panel-section">
-        <h2>Public operation <span>03</span></h2>
+      <section class="panel-section" data-console-panel="operate">
+        <h2>Platform operation <span>01 / C</span></h2>
+        <div class="operation-permit">
+          <label class="console-select">
+            OPERATION PERMIT
+            <select id="operation-mode">
+              <option value="public">Public operation</option>
+              <option value="test">Empty test cycle</option>
+            </select>
+          </label>
+          <p id="operation-permit-note"><strong>PUBLIC</strong> Guests arrive only while the queue entrance is open.</p>
+        </div>
         <div class="control-row control-row--five">
           <button class="panel-button panel-button--key" id="power">
             <i></i><span>CONTROL KEY<small>OFF</small><kbd>K</kbd></span>
@@ -137,8 +170,12 @@
         </div>
       </section>
 
-      <section class="panel-section">
-        <h2>Top Spin motion control <span>04</span></h2>
+      <section class="panel-section" data-console-panel="motion">
+        <h2>Top Spin motion control <span>02 / A</span></h2>
+        <div class="motion-return-strip">
+          <div data-lamp="loadReady"><i></i><span>RETURN CONTROLLER<small data-telemetry="return-stage-compact">PARKED &amp; LOCKED</small></span></div>
+          <p><strong>TO END THE CYCLE:</strong> press <kbd>S</kbd> once. Braking, arm parking, gondola levelling and load proof are automatic.</p>
+        </div>
         <div class="mode-row">
           <label class="speed-selector speed-selector--wide">
             OPERATING MODE
@@ -172,7 +209,7 @@
           <button class="system-button active" id="arm-lock"><i></i><span>ARM LOCK<small>ENGAGED</small></span><kbd>L</kbd></button>
           <button class="hold-button" id="arm-forward">▶<span>ARM CLOCKWISE</span><kbd>→</kbd></button>
           <button class="system-button active brake-paddle" id="gondola-brake"><i></i><span>HOLD GONDOLA BRAKE<small>100% PRESSURE</small></span><kbd>B</kbd></button>
-          <button class="system-button system-button--stop" id="cycle-stop"><i></i><span>STOP / RETURN<small>SEQUENCE STOP</small></span><kbd>S</kbd></button>
+          <button class="system-button system-button--stop" id="cycle-stop"><i></i><span>RETURN TO LOAD<small>PRESS TO START</small></span><kbd>S</kbd></button>
         </div>
         <p class="panel-note">The gondola is free-swinging. Hold the brake paddle to build caliper pressure and capture its position relative to the arms; release it to let gravity and movement of the arm pivots develop the swing.</p>
         <div class="motion-instruments" aria-label="Live mechanical instruments">
@@ -184,8 +221,85 @@
         <p class="manual-coach" id="manual-coach">Manual coach: lock the gondola to the moving arms, then release the brake to convert arm movement into free swing.</p>
       </section>
 
+      <section class="panel-section return-section" data-console-panel="motion">
+        <h2>Controlled return <span>02 / B</span></h2>
+        <div class="return-head">
+          <div><small>RETURN CONTROLLER</small><strong data-telemetry="return-stage">PARKED &amp; LOCKED</strong></div>
+          <div data-lamp="loadReady"><i></i><span>LOAD POSITION<small>PROVED</small></span></div>
+        </div>
+        <div class="return-track" aria-label="Automatic return stages">
+          <span data-return-step="brake">1<small>Brake</small></span>
+          <i></i>
+          <span data-return-step="arms">2<small>Park arms</small></span>
+          <i></i>
+          <span data-return-step="level">3<small>Level gondola</small></span>
+          <i></i>
+          <span data-return-step="locks">4<small>Prove locks</small></span>
+        </div>
+        <p>Press <kbd>S</kbd> once at any point in the cycle. The controller performs a controlled stop and presents the gondola at the unload position.</p>
+      </section>
+
+      <section class="panel-section maintenance-section" data-console-panel="maintenance">
+        <h2>Fault desk <span>03 / A</span></h2>
+        <div class="fault-display" id="fault-display">
+          <span>NO ACTIVE FAULT</span>
+          <strong data-telemetry="fault-name">All monitored systems normal</strong>
+          <small data-telemetry="fault-severity">SYSTEM AVAILABLE</small>
+        </div>
+        <div class="mechanic-summary">
+          <div><small>MECHANIC</small><strong data-telemetry="mechanic-status">STANDBY</strong></div>
+          <div><small>ETA</small><strong data-telemetry="mechanic-eta">--</strong></div>
+          <div><small>REPAIR</small><strong data-telemetry="repair-progress">0%</strong></div>
+        </div>
+        <div class="maintenance-actions">
+          <button class="service-button service-button--call" id="call-mechanic"><span>☎</span><strong>CALL MECHANIC<small>RADIO / CALL-OUT</small></strong><kbd>M</kbd></button>
+          <label class="console-select">
+            DIAGNOSIS
+            <select id="diagnosis-system">
+              <option value="platform">Platform / gates</option>
+              <option value="restraints">Restraint circuit</option>
+              <option value="drive">Arm drive / encoder</option>
+              <option value="brake">Gondola brake</option>
+              <option value="effects">Water effects</option>
+            </select>
+          </label>
+          <button class="service-button" id="diagnose"><span>⌁</span><strong>CONFIRM DIAGNOSIS<small>START REPAIR</small></strong></button>
+        </div>
+        <div class="repair-bar"><i id="repair-bar"></i></div>
+        <p class="panel-note">A safety fault latches the ride. Call the mechanic, diagnose the affected system, wait for repair, then use FAULT RESET. A wrong diagnosis costs session score.</p>
+      </section>
+
+      <section class="panel-section maintenance-section" data-console-panel="maintenance">
+        <h2>Reliability controls <span>03 / B</span></h2>
+        <div class="reliability-grid">
+          <label class="console-select">
+            RANDOM FAULT RATE
+            <select id="fault-rate">
+              <option value="off">Off</option>
+              <option value="low">Low</option>
+              <option value="normal" selected>Normal</option>
+              <option value="high">High / training</option>
+            </select>
+          </label>
+          <div><small>NEXT EXPOSURE</small><strong data-telemetry="next-fault">--</strong></div>
+        </div>
+        <div class="fault-injector">
+          <label class="console-select">
+            EMPTY-TEST FAULT INJECTION
+            <select id="fault-inject">
+              <option value="gate_sensor">Load-gate limit switch</option>
+              <option value="restraint_channel">Restraint prove channel</option>
+              <option value="arm_encoder">Arm encoder</option>
+              <option value="gondola_brake">Gondola brake pressure</option>
+              <option value="water_pressure">Water-effects pressure</option>
+            </select>
+          </label>
+          <button id="inject-fault">INJECT TRAINING FAULT</button>
+        </div>
+      </section>
+
       <section class="panel-section panel-section--dispatch">
-        <h2>Cycle control <span>05</span></h2>
+        <h2>Master cycle control <span>LIVE</span></h2>
         <div class="dispatch-row">
           <button id="reset" class="round-button round-button--blue"><i></i><span>FAULT<br>RESET</span><kbd>F</kbd></button>
           <button id="dispatch" class="dispatch-button"><i></i><span>HOLD TO<br>DISPATCH</span><kbd>SPACE</kbd></button>
@@ -202,14 +316,16 @@
     <p class="eyebrow">Toxicator operator manual</p>
     <h2>From closed ride to dispatch</h2>
     <ol>
-      <li>Press <kbd>K</kbd> for control power, then <kbd>O</kbd> to open the queue entrance. It may be closed again during operation without removing guests already waiting.</li>
+      <li>Press <kbd>K</kbd> for control power. Guests arrive gradually only after <kbd>O</kbd> opens the queue; demand rises and falls in park waves.</li>
+      <li>For an empty engineering run, select <strong>Empty test cycle</strong>. This closes the public queue and permits a dispatch with no riders.</li>
       <li>Press <kbd>G</kbd> to open the load gate. Guests board one seat at a time from the queue.</li>
       <li>Close the gate with <kbd>G</kbd>, then press <kbd>R</kbd> and wait for every occupied restraint circuit to prove.</li>
       <li>Confirm the platform with <kbd>C</kbd>, enable the drive with <kbd>D</kbd>, then hold <kbd>SPACE</kbd>.</li>
       <li>For manual mode, release arm lock with <kbd>L</kbd>. Hold the arrow keys to drive the arms. Hold <kbd>B</kbd> to apply the gondola brake; release <kbd>B</kbd> for free swing.</li>
       <li>To build flips, carry the braked gondola upward with the arms, release the brake before the crest, then reverse the arms as the free gondola passes through the bottom. Short brake captures add or remove momentum depending on timing.</li>
-      <li>Press <kbd>S</kbd> to finish. A manual cycle only completes when arms and gondola are upright, stationary and both locks are engaged.</li>
+      <li>Press <kbd>S</kbd> once to finish. The return controller brakes the ride, parks the arms, levels the gondola and proves the load locks automatically.</li>
       <li>Open restraints, then open the gate to unload. The next group boards automatically.</li>
+      <li>When a fault latches, open <strong>Maintenance</strong> or press <kbd>M</kbd>. Call the mechanic, select the affected system, complete the repair, then press <kbd>F</kbd>.</li>
     </ol>
     <h3>Keyboard commands</h3>
     <div class="key-grid">
@@ -221,6 +337,7 @@
       <span><kbd>W</kbd> Water effects</span><span><kbd>1–4</kbd> Operating mode</span>
       <span><kbd>SPACE</kbd> Dispatch</span><span><kbd>E</kbd> Emergency stop</span>
       <span><kbd>F</kbd> Fault reset</span><span><kbd>V</kbd> Change camera</span>
+      <span><kbd>M</kbd> Call mechanic</span><span><kbd>T</kbd> Empty test permit</span>
     </div>
     <p>Automatic sequences control the arm drive and gondola brake for you. Manual mode scores more strongly for sustained happiness, controlled inversions and efficient throughput.</p>
   </dialog>
