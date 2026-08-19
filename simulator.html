@@ -87,6 +87,7 @@
         <h2>Guest operation <span>01</span></h2>
         <div class="guest-summary">
           <div><small>WAITING</small><strong data-telemetry="queue">18</strong></div>
+          <div><small>WALKING</small><strong data-telemetry="boarding">0</strong></div>
           <div><small>SEATED</small><strong><span data-telemetry="onboard">0</span>/38</strong></div>
           <div><small>SERVED</small><strong data-telemetry="served">0</strong></div>
           <div><small>CYCLES</small><strong data-telemetry="cycles">0</strong></div>
@@ -94,6 +95,7 @@
         <div class="seat-map" id="seat-map" aria-label="Thirty-eight restraint circuits"></div>
         <div class="challenge-strip" aria-label="Session challenges">
           <span data-challenge="inversions3">3× FLIP</span>
+          <span data-challenge="inversions4">4× FLIP</span>
           <span data-challenge="inversions5">5× FLIP</span>
           <span data-challenge="happy30">30s HAPPY</span>
           <span data-challenge="gforce5">5.0 G</span>
@@ -121,7 +123,7 @@
             <i></i><span>CONTROL KEY<small>OFF</small><kbd>K</kbd></span>
           </button>
           <button class="panel-button" id="ride-open">
-            <i></i><span>RIDE ENTRANCE<small>CLOSED</small><kbd>O</kbd></span>
+            <i></i><span>QUEUE ENTRANCE<small>CLOSED</small><kbd>O</kbd></span>
           </button>
           <button class="panel-button" id="load-gate">
             <i></i><span>LOAD GATE<small>CLOSED</small><kbd>G</kbd></span>
@@ -173,6 +175,13 @@
           <button class="system-button system-button--stop" id="cycle-stop"><i></i><span>STOP / RETURN<small>SEQUENCE STOP</small></span><kbd>S</kbd></button>
         </div>
         <p class="panel-note">The gondola is free-swinging. Hold the brake paddle to build caliper pressure and capture its position relative to the arms; release it to let gravity and movement of the arm pivots develop the swing.</p>
+        <div class="motion-instruments" aria-label="Live mechanical instruments">
+          <div><small>RELATIVE SPEED</small><strong><span data-telemetry="relative-rpm">0.0</span> RPM</strong></div>
+          <div><small>BRAKE DISC</small><strong><span data-telemetry="brake-temp">22</span>°C</strong></div>
+          <div><small>PENDULUM PHASE</small><strong data-telemetry="phase">BOTTOM</strong></div>
+          <div><small>CONTINUOUS FLIPS</small><strong data-telemetry="flips">0</strong></div>
+        </div>
+        <p class="manual-coach" id="manual-coach">Manual coach: lock the gondola to the moving arms, then release the brake to convert arm movement into free swing.</p>
       </section>
 
       <section class="panel-section panel-section--dispatch">
@@ -193,17 +202,18 @@
     <p class="eyebrow">Toxicator operator manual</p>
     <h2>From closed ride to dispatch</h2>
     <ol>
-      <li>Press <kbd>K</kbd> for control power, then <kbd>O</kbd> to open the public entrance.</li>
+      <li>Press <kbd>K</kbd> for control power, then <kbd>O</kbd> to open the queue entrance. It may be closed again during operation without removing guests already waiting.</li>
       <li>Press <kbd>G</kbd> to open the load gate. Guests board one seat at a time from the queue.</li>
       <li>Close the gate with <kbd>G</kbd>, then press <kbd>R</kbd> and wait for every occupied restraint circuit to prove.</li>
       <li>Confirm the platform with <kbd>C</kbd>, enable the drive with <kbd>D</kbd>, then hold <kbd>SPACE</kbd>.</li>
       <li>For manual mode, release arm lock with <kbd>L</kbd>. Hold the arrow keys to drive the arms. Hold <kbd>B</kbd> to apply the gondola brake; release <kbd>B</kbd> for free swing.</li>
+      <li>To build flips, carry the braked gondola upward with the arms, release the brake before the crest, then reverse the arms as the free gondola passes through the bottom. Short brake captures add or remove momentum depending on timing.</li>
       <li>Press <kbd>S</kbd> to finish. A manual cycle only completes when arms and gondola are upright, stationary and both locks are engaged.</li>
       <li>Open restraints, then open the gate to unload. The next group boards automatically.</li>
     </ol>
     <h3>Keyboard commands</h3>
     <div class="key-grid">
-      <span><kbd>K</kbd> Control key</span><span><kbd>O</kbd> Ride entrance</span>
+      <span><kbd>K</kbd> Control key</span><span><kbd>O</kbd> Queue entrance</span>
       <span><kbd>G</kbd> Load gate</span><span><kbd>R</kbd> Restraints</span>
       <span><kbd>C</kbd> Platform clear</span><span><kbd>D</kbd> Main drive</span>
       <span><kbd>←</kbd><kbd>→</kbd> Hold arm drive</span><span><kbd>B</kbd> Hold gondola brake</span>

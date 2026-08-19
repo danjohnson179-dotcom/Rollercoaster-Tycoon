@@ -9,6 +9,15 @@ const qa = selector => [...document.querySelectorAll(selector)];
 const controller = new RideController();
 const loader = q('#sim-loader');
 const seatLamps = [];
+const seatLoadOrder = [];
+for (let offset = 0; offset <= 9; offset += 1) {
+  const candidates = offset === 0
+    ? [9, 28]
+    : [9 - offset, 28 - offset, 9 + offset, 28 + offset];
+  seatLoadOrder.push(...candidates.filter(index => index >= 0 && index < 38));
+}
+const seatLoadRank = Array(38).fill(99);
+seatLoadOrder.forEach((seatIndex, rank) => { seatLoadRank[seatIndex] = rank; });
 let scene;
 let cameraIndex = 0;
 const cameraNames = ['operator', 'wide', 'platform'];
@@ -252,7 +261,7 @@ function renderState(state, message, type) {
   q('[data-status="entrance"]').textContent = state.rideOpen ? 'OPEN' : 'CLOSED';
 
   seatLamps.forEach((lamp, index) => {
-    const occupied = index < state.onboard;
+    const occupied = seatLoadRank[index] < state.onboard;
     lamp.classList.toggle('occupied', occupied);
     lamp.classList.toggle('moving', occupied && state.restraintProgress > 0 && state.restraintProgress < 1);
     lamp.classList.toggle('proved', occupied && state.restraintProved);
@@ -278,6 +287,7 @@ function renderTelemetry(state) {
     q('#restraints small').textContent = state.restraintProved ? 'LOCKED / PROVED' : state.restraints ? 'CLOSING' : 'OPEN';
   }
   qa('[data-telemetry="queue"]').forEach(element => { element.textContent = state.queue; });
+  q('[data-telemetry="boarding"]').textContent = state.boardingCount;
   qa('[data-telemetry="onboard"]').forEach(element => { element.textContent = state.onboard; });
   q('[data-telemetry="served"]').textContent = state.guestsServed;
   q('[data-telemetry="cycles"]').textContent = state.cycles;
@@ -286,6 +296,10 @@ function renderTelemetry(state) {
   q('[data-telemetry="rpm"]').textContent = Math.abs(state.rpm).toFixed(1);
   q('[data-telemetry="relative"]').textContent = state.relativeGondolaAngle.toFixed(0);
   q('[data-telemetry="brake"]').textContent = Math.round(state.brakePressure * 100);
+  q('[data-telemetry="relative-rpm"]').textContent = Math.abs(state.relativeRpm).toFixed(1);
+  q('[data-telemetry="brake-temp"]').textContent = Math.round(state.brakeTemperature);
+  q('[data-telemetry="phase"]').textContent = state.pendulumPhase;
+  q('[data-telemetry="flips"]').textContent = state.continuousInversions;
   q('[data-telemetry="time"]').textContent = `${String(Math.floor(state.cycleElapsed / 60)).padStart(2, '0')}:${String(Math.floor(state.cycleElapsed % 60)).padStart(2, '0')}`;
   q('[data-telemetry="gforce"]').textContent = state.currentG.toFixed(1);
   q('[data-telemetry="happiness"]').textContent = Math.round(state.happiness);
@@ -293,8 +307,25 @@ function renderTelemetry(state) {
     q(`[data-challenge="${name}"]`)?.classList.toggle('complete', complete);
   });
 
+  const coach = q('#manual-coach');
+  if (state.mode === STATES.RUNNING && state.program === 'manual') {
+    if (state.brakeTemperature > 175) {
+      coach.textContent = 'Manual coach: brake temperature is high. Release the paddle and allow the disc to cool before the next capture.';
+    } else if (state.gondolaBrake) {
+      coach.textContent = 'Manual coach: the gondola is capturing to the arms. Release B before the crest to preserve its angular momentum.';
+    } else if (state.pendulumPhase === 'BOTTOM' && Math.abs(state.relativeRpm) > 7) {
+      coach.textContent = 'Manual coach: high speed through the bottom — reverse arm direction now, or use a short brake capture to add energy.';
+    } else if (state.pendulumPhase === 'INVERTED') {
+      coach.textContent = 'Manual coach: gondola inverted. Keep the brake released for continuous flips; capture only when you want to lock the pose.';
+    } else {
+      coach.textContent = 'Manual coach: keep driving the arms and let the free gondola swing. Brake timing, not a powered gondola motor, creates the flips.';
+    }
+  } else {
+    coach.textContent = 'Manual coach: lock the gondola to the moving arms, then release the brake to convert arm movement into free swing.';
+  }
+
   seatLamps.forEach((lamp, index) => {
-    const occupied = index < state.onboard;
+    const occupied = seatLoadRank[index] < state.onboard;
     lamp.classList.toggle('occupied', occupied);
     lamp.classList.toggle('moving', occupied && state.restraintProgress > 0 && state.restraintProgress < 1);
     lamp.classList.toggle('proved', occupied && state.restraintProved);

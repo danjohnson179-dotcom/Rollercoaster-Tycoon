@@ -41,9 +41,9 @@ export class RideScene {
 
     this.camera = new THREE.PerspectiveCamera(39, 1, 0.1, 160);
     this.cameraViews = {
-      operator: { position: [18.5, 10.5, 23.5], target: [0, 7.2, 0] },
+      operator: { position: [16.2, 9.4, 20.5], target: [0, 7.0, 0] },
       wide: { position: [25, 17.5, 31], target: [0, 7.1, 0] },
-      platform: { position: [0, 7.4, 20], target: [0, 7.0, 0] }
+      platform: { position: [0, 6.8, 14.8], target: [0, 6.3, 0] }
     };
     this.camera.position.fromArray(this.cameraViews.operator.position);
     this.cameraTarget = new THREE.Vector3(...this.cameraViews.operator.target);
@@ -55,6 +55,13 @@ export class RideScene {
     this.riders = [];
     this.restraintFrames = [];
     this.queueGuests = [];
+    this.movingGuests = [];
+    this.visualOccupied = Array(38).fill(false);
+    this.lastOnboard = null;
+    this.lastBoardingStarted = null;
+    this.lastQueue = null;
+    this.queueSlots = [];
+    this.seatOrder = [];
     this.platformGates = [];
     this.waterJets = [];
     this.beacons = [];
@@ -417,6 +424,14 @@ export class RideScene {
     this.box([13.9, 0.78, 2.72], [0, 0, 0], this.materials.toxicGreen, this.gondola);
     this.box([12.9, 0.38, 3.18], [0, -0.46, 0], this.materials.darkSteel, this.gondola);
     this.box([12.4, 0.16, 2.96], [0, -0.72, 0], this.materials.brightLime, this.gondola);
+    this.box([12.65, 0.24, 0.24], [0, 1.58, 0], this.materials.toxicGreen, this.gondola);
+    for (let frame = -6; frame <= 6; frame += 1) {
+      this.box([0.09, 1.46, 0.14], [frame * 0.97, 0.84, 0], this.materials.galvanised, this.gondola);
+    }
+    for (const z of [-1.58, 1.58]) {
+      this.box([12.7, 0.34, 0.1], [0, -0.37, z], this.materials.black, this.gondola);
+      this.box([11.9, 0.09, 0.12], [0, -0.35, z + Math.sign(z) * 0.055], this.materials.brightLime, this.gondola);
+    }
 
     for (const side of [-1, 1]) {
       const bearing = this.cylinder(1.05, 0.86, [side * this.towerX, 0, 0], this.materials.darkSteel, this.gondola, 40);
@@ -471,6 +486,14 @@ export class RideScene {
         restraintFrame.rotation.x = -1.18;
         this.restraintFrames.push(restraintFrame);
       }
+    }
+
+    // Guests board from the centre out, alternating between the two back-to-back rows.
+    for (let offset = 0; offset <= 9; offset += 1) {
+      const candidates = offset === 0
+        ? [9, 28]
+        : [9 - offset, 28 - offset, 9 + offset, 28 + offset];
+      this.seatOrder.push(...candidates.filter(index => index >= 0 && index < 38));
     }
   }
 
@@ -604,10 +627,14 @@ export class RideScene {
     const clothing = [0x667b82, 0x8b604d, 0x5b7657, 0x998440, 0x526e84, 0x865b73, 0x434d56];
     const skin = [0xddaa7a, 0x9b6749, 0xf0c6a0, 0x75442f];
     for (let index = 0; index < 32; index += 1) {
+      const row = Math.floor(index / 8);
+      const column = index % 8;
+      const snakeColumn = row % 2 ? 7 - column : column;
+      this.queueSlots.push(new THREE.Vector3(-9.55 - snakeColumn * 0.66, 0.02, 8.8 - row * 0.77));
+    }
+    for (let index = 0; index < 32; index += 1) {
       const guest = new THREE.Group();
-      const row = Math.floor(index / 10);
-      const column = index % 10;
-      guest.position.set(-14.45 + column * 0.58, 0.02, 8.8 - row * 0.79);
+      guest.position.copy(this.queueSlots[index]);
       this.scene.add(guest);
       const shirt = new THREE.MeshStandardMaterial({ color: clothing[index % clothing.length], roughness: 0.82 });
       const body = this.box([0.32, 0.72, 0.26], [0, 0.66, 0], shirt, guest);
@@ -618,6 +645,123 @@ export class RideScene {
       guest.visible = false;
       guest.userData.baseY = guest.position.y;
       this.queueGuests.push(guest);
+    }
+
+    this.boardingCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-9.45, 0.02, 8.8),
+      new THREE.Vector3(-11.65, 0.18, 6.2),
+      new THREE.Vector3(-10.85, 1.15, 5.55),
+      new THREE.Vector3(-9.6, 2.55, 5.0),
+      new THREE.Vector3(-8.05, 3.78, 4.55),
+      new THREE.Vector3(-6.0, 4.05, 3.45),
+      new THREE.Vector3(0, 4.08, 3.1)
+    ]);
+    this.unloadingCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 4.08, -3.1),
+      new THREE.Vector3(6.0, 4.05, -3.45),
+      new THREE.Vector3(8.05, 3.78, -4.55),
+      new THREE.Vector3(9.6, 2.55, -5.0),
+      new THREE.Vector3(10.85, 1.15, -5.55),
+      new THREE.Vector3(12.4, 0.05, -6.4),
+      new THREE.Vector3(16.5, 0.02, -6.4)
+    ]);
+  }
+
+  createWalkingGuest(index) {
+    const source = this.queueGuests[index % this.queueGuests.length];
+    const guest = source.clone(true);
+    guest.visible = true;
+    guest.scale.setScalar(1.03);
+    this.scene.add(guest);
+    return guest;
+  }
+
+  queueBoardingGuest(seatIndex, sequence) {
+    const guest = this.createWalkingGuest(seatIndex + sequence);
+    guest.position.copy(this.boardingCurve.getPoint(0));
+    this.visualOccupied[seatIndex] = 'boarding';
+    this.movingGuests.push({
+      guest,
+      curve: this.boardingCurve,
+      elapsed: -sequence * 0.1,
+      duration: 3.15 + (seatIndex % 5) * 0.08,
+      seatIndex,
+      type: 'boarding'
+    });
+  }
+
+  queueUnloadingGuest(seatIndex, sequence) {
+    const guest = this.createWalkingGuest(seatIndex + sequence + 11);
+    guest.position.copy(this.unloadingCurve.getPoint(0));
+    this.visualOccupied[seatIndex] = false;
+    this.movingGuests.push({
+      guest,
+      curve: this.unloadingCurve,
+      elapsed: -sequence * 0.08,
+      duration: 2.8 + (seatIndex % 4) * 0.08,
+      seatIndex,
+      type: 'unloading'
+    });
+  }
+
+  syncGuestFlow(state) {
+    if (this.lastBoardingStarted === null) this.lastBoardingStarted = state.boardingStarted || 0;
+    if ((state.boardingStarted || 0) > this.lastBoardingStarted) {
+      const count = state.boardingStarted - this.lastBoardingStarted;
+      for (let sequence = 0; sequence < count; sequence += 1) {
+        const seatIndex = this.seatOrder.find(index => !this.visualOccupied[index]);
+        if (seatIndex !== undefined) this.queueBoardingGuest(seatIndex, sequence);
+      }
+    }
+    this.lastBoardingStarted = state.boardingStarted || 0;
+
+    if (this.lastOnboard === null) {
+      this.lastOnboard = state.onboard;
+      for (let index = 0; index < state.onboard; index += 1) {
+        this.visualOccupied[this.seatOrder[index]] = true;
+      }
+    } else if (state.onboard > this.lastOnboard) {
+      this.lastOnboard = state.onboard;
+    } else if (state.onboard < this.lastOnboard) {
+      const count = this.lastOnboard - state.onboard;
+      for (let sequence = 0; sequence < count; sequence += 1) {
+        const seatIndex = [...this.seatOrder].reverse().find(index => this.visualOccupied[index]);
+        if (seatIndex !== undefined) this.queueUnloadingGuest(seatIndex, sequence);
+      }
+      this.lastOnboard = state.onboard;
+    }
+
+    if (this.lastQueue === null) this.lastQueue = state.queue;
+    if (state.queue < this.lastQueue) {
+      for (let count = 0; count < this.lastQueue - state.queue; count += 1) {
+        this.queueGuests.push(this.queueGuests.shift());
+      }
+    }
+    this.lastQueue = state.queue;
+  }
+
+  updateMovingGuests(dt) {
+    for (let index = this.movingGuests.length - 1; index >= 0; index -= 1) {
+      const movement = this.movingGuests[index];
+      movement.elapsed += dt;
+      if (movement.elapsed < 0) {
+        movement.guest.visible = false;
+        continue;
+      }
+      movement.guest.visible = true;
+      const progress = clamp(movement.elapsed / movement.duration, 0, 1);
+      const eased = progress * progress * (3 - 2 * progress);
+      const point = movement.curve.getPoint(eased);
+      const next = movement.curve.getPoint(Math.min(1, eased + 0.015));
+      movement.guest.position.copy(point);
+      movement.guest.position.y += Math.abs(Math.sin(movement.elapsed * 8.5)) * 0.035;
+      movement.guest.rotation.y = Math.atan2(next.x - point.x, next.z - point.z);
+
+      if (progress >= 1) {
+        if (movement.type === 'boarding') this.visualOccupied[movement.seatIndex] = true;
+        this.scene.remove(movement.guest);
+        this.movingGuests.splice(index, 1);
+      }
     }
   }
 
@@ -693,8 +837,10 @@ export class RideScene {
     this.gondola.rotation.x = this.gondolaAngle;
     this.updateCounterweightShaft();
 
+    this.syncGuestFlow(state);
+    this.updateMovingGuests(dt);
     for (let index = 0; index < this.riders.length; index += 1) {
-      this.riders[index].visible = index < state.onboard;
+      this.riders[index].visible = this.visualOccupied[index] === true;
     }
     for (const frame of this.restraintFrames) {
       frame.rotation.x = -1.18 * (1 - state.restraintProgress);
@@ -708,7 +854,10 @@ export class RideScene {
     for (let index = 0; index < this.queueGuests.length; index += 1) {
       const guest = this.queueGuests[index];
       guest.visible = state.rideOpen && index < Math.min(state.queue, this.queueGuests.length);
-      guest.position.y = guest.userData.baseY + (guest.visible ? Math.sin(now * 0.0022 + index) * 0.016 : 0);
+      const slot = this.queueSlots[index];
+      guest.position.x = THREE.MathUtils.lerp(guest.position.x, slot.x, Math.min(1, dt * 2.25));
+      guest.position.z = THREE.MathUtils.lerp(guest.position.z, slot.z, Math.min(1, dt * 2.25));
+      guest.position.y = slot.y + (guest.visible ? Math.sin(now * 0.0022 + index) * 0.016 : 0);
     }
 
     this.entranceGate.rotation.y = THREE.MathUtils.lerp(this.entranceGate.rotation.y, state.rideOpen ? -1.34 : 0, Math.min(1, dt * 4));
@@ -732,7 +881,13 @@ export class RideScene {
       this.beacons[index].material.emissiveIntensity = state.power ? 0.4 + flash * 2.7 : 0.05;
     }
 
-    this.camera.position.lerp(this.desiredCamera, Math.min(1, dt * 2.35));
+    const cameraGoal = this.desiredCamera.clone();
+    if (running) {
+      const shake = clamp((Math.abs(state.armVelocity) + Math.abs(state.gondolaVelocity) * 0.18) / 650, 0, 0.055);
+      cameraGoal.x += Math.sin(now * 0.017) * shake;
+      cameraGoal.y += Math.sin(now * 0.023 + 1.4) * shake;
+    }
+    this.camera.position.lerp(cameraGoal, Math.min(1, dt * 2.35));
     this.cameraTarget.lerp(this.desiredTarget, Math.min(1, dt * 2.35));
     this.camera.lookAt(this.cameraTarget);
     this.renderer.render(this.scene, this.camera);

@@ -23,7 +23,8 @@ const DEG = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 const GRAVITY = 9.81;
 const ARM_RADIUS = 6.05;
-const GONDOLA_COM_OFFSET = 1.38;
+const PHYSICAL_PENDULUM_LENGTH = 2.55;
+const RIDER_RADIUS = 1.32;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const approach = (value, target, amount) => value + clamp(target - value, -amount, amount);
 const wrappedAngle = value => ((value + 180) % 360 + 360) % 360 - 180;
@@ -78,6 +79,8 @@ export class RideController extends EventTarget {
       fault: false,
       gondolaBrake: true,
       brakePressure: 1,
+      brakeTemperature: 22,
+      brakeFade: 1,
       armLock: true,
       armSpeedSetpoint: 0.72,
       armAngle: 0,
@@ -91,6 +94,8 @@ export class RideController extends EventTarget {
       water: true,
       queue: 18,
       onboard: 0,
+      boardingCount: 0,
+      boardingStarted: 0,
       guestsServed: 0,
       cycles: 0,
       score: 0,
@@ -105,6 +110,7 @@ export class RideController extends EventTarget {
       throughput: 0,
       achievements: {
         inversions3: false,
+        inversions4: false,
         inversions5: false,
         happy30: false,
         gforce5: false,
@@ -115,6 +121,7 @@ export class RideController extends EventTarget {
     this.dispatchStarted = 0;
     this.arrivalAccumulator = 0;
     this.guestAccumulator = 0;
+    this.boardingTransfers = [];
     this.brakeOffset = 0;
     this.previousInversionBand = 0;
     this.lastArmVelocity = 0;
@@ -127,7 +134,11 @@ export class RideController extends EventTarget {
       ...s,
       arm: wrappedAngle(s.armAngle),
       rpm: s.gondolaVelocity / 6,
+      relativeRpm: (s.gondolaVelocity - s.armVelocity) / 6,
       relativeGondolaAngle: wrappedAngle(s.gondolaAngle - s.armAngle),
+      pendulumPhase: Math.abs(wrappedAngle(s.gondolaAngle)) < 35
+        ? 'BOTTOM'
+        : Math.abs(wrappedAngle(s.gondolaAngle)) > 145 ? 'INVERTED' : 'CLIMBING',
       capacity: CAPACITY,
       programmeLabel: PROGRAMS[s.program].label,
       safeAtLoad: this.safeAtLoad
@@ -186,6 +197,9 @@ export class RideController extends EventTarget {
     if ([STATES.RUNNING, STATES.RETURNING].includes(s.mode)) {
       return this.reject('Control power cannot be isolated while the ride is moving.');
     }
+    if (s.power && (s.loadGate || s.boardingCount > 0 || s.onboard > 0)) {
+      return this.reject('Control power cannot be isolated until the platform is empty and the load gate is closed.');
+    }
     s.power = !s.power;
     if (!s.power) {
       Object.assign(s, {
@@ -206,18 +220,12 @@ export class RideController extends EventTarget {
   toggleRideOpen() {
     const s = this.state;
     if (!s.power) return this.reject('Turn the control key before opening the ride.');
-    if ([STATES.RUNNING, STATES.RETURNING].includes(s.mode)) {
-      return this.reject('The public entrance is locked during a ride cycle.');
-    }
-    if (s.rideOpen && (s.onboard > 0 || s.loadGate)) {
-      return this.reject('Unload all guests and close the load gate before closing the ride.');
-    }
     s.rideOpen = !s.rideOpen;
-    s.platformClear = false;
+    if (![STATES.RUNNING, STATES.RETURNING].includes(s.mode)) s.platformClear = false;
     this.updateMode();
     this.emit(s.rideOpen
-      ? 'Ride entrance opened. Guests are joining the queue.'
-      : 'Ride entrance closed. No further guests will enter the queue.');
+      ? 'Queue entrance opened. New guests are joining the waiting line.'
+      : `Queue entrance closed. ${s.queue} waiting guests remain in the line.`);
     return true;
   }
 
@@ -229,7 +237,10 @@ export class RideController extends EventTarget {
     if (s.restraints || s.restraintProgress > 0.02) {
       return this.reject('Open the restraints before operating the load gate.');
     }
-    if (!s.rideOpen && !s.needsUnload) return this.reject('Open the ride entrance before loading guests.');
+    if (s.loadGate && s.boardingCount > 0) {
+      return this.reject(`${s.boardingCount} guest${s.boardingCount === 1 ? ' is' : 's are'} still walking to the gondola.`);
+    }
+    if (!s.rideOpen && s.queue === 0 && !s.needsUnload) return this.reject('There are no waiting guests to load. Open the queue entrance first.');
     s.loadGate = !s.loadGate;
     s.platformClear = false;
     if (s.loadGate) {
@@ -425,6 +436,7 @@ export class RideController extends EventTarget {
       s.mode = STATES.FAULT;
       s.drive = false;
       s.armLock = true;
+      this.applyBrake(true);
       this.holds.clear();
       this.emit('EMERGENCY STOP LATCHED — service braking active.', 'error');
     } else {
@@ -451,10 +463,12 @@ export class RideController extends EventTarget {
   updateMode() {
     const s = this.state;
     if (s.fault) s.mode = STATES.FAULT;
-    else if (!s.power || !s.rideOpen) s.mode = STATES.CLOSED;
+    else if (!s.power) s.mode = STATES.CLOSED;
+    else if ([STATES.RUNNING, STATES.RETURNING].includes(s.mode)) return;
     else if (s.loadGate) s.mode = s.needsUnload && s.onboard > 0 ? STATES.UNLOADING : STATES.BOARDING;
     else if (this.canDispatch) s.mode = STATES.READY;
     else if (s.onboard > 0) s.mode = STATES.CHECKING;
+    else if (!s.rideOpen && s.queue === 0) s.mode = STATES.CLOSED;
     else s.mode = STATES.WAITING;
   }
 
@@ -479,16 +493,21 @@ export class RideController extends EventTarget {
         s.queue += 1;
         this.arrivalAccumulator -= 1;
       }
-    } else if (s.queue > 0) {
-      this.arrivalAccumulator += dt * 0.08;
-      if (this.arrivalAccumulator >= 1) {
-        s.queue -= 1;
-        this.arrivalAccumulator = 0;
-      }
     }
 
+    for (let index = this.boardingTransfers.length - 1; index >= 0; index -= 1) {
+      this.boardingTransfers[index] -= dt;
+      if (this.boardingTransfers[index] <= 0) {
+        this.boardingTransfers.splice(index, 1);
+        s.onboard += 1;
+        s.score += 2;
+      }
+    }
+    s.boardingCount = this.boardingTransfers.length;
+
     if (!s.loadGate || !this.safeAtLoad) return;
-    this.guestAccumulator += dt * 3.2;
+    // Approximate a staffed group load rather than teleporting a full gondola.
+    this.guestAccumulator += dt * (s.needsUnload ? 1.48 : 1.15);
     while (this.guestAccumulator >= 1) {
       if (s.needsUnload && s.onboard > 0) {
         s.onboard -= 1;
@@ -500,10 +519,11 @@ export class RideController extends EventTarget {
           s.needsUnload = false;
           s.mode = STATES.BOARDING;
         }
-        if (s.rideOpen && s.queue > 0 && s.onboard < CAPACITY) {
+        if (s.queue > 0 && s.onboard + this.boardingTransfers.length < CAPACITY) {
           s.queue -= 1;
-          s.onboard += 1;
-          s.score += 2;
+          this.boardingTransfers.push(3.15 + (s.queue % 5) * 0.08);
+          s.boardingCount = this.boardingTransfers.length;
+          s.boardingStarted += 1;
         } else {
           this.guestAccumulator = 0;
           break;
@@ -530,6 +550,8 @@ export class RideController extends EventTarget {
   tickMotion(dt) {
     const s = this.state;
     let targetSpeed = 0;
+    let returnArmTarget = null;
+    let returnGondolaTarget = null;
 
     if (s.mode === STATES.RUNNING) {
       s.cycleElapsed += dt;
@@ -539,7 +561,7 @@ export class RideController extends EventTarget {
           if (this.holds.has('armForward')) armCommand += 1;
           if (this.holds.has('armReverse')) armCommand -= 1;
         }
-        targetSpeed = armCommand * (18 + s.armSpeedSetpoint * 23);
+        targetSpeed = armCommand * (20 + s.armSpeedSetpoint * 40);
         if (s.cycleElapsed >= PROGRAMS.manual.duration) {
           s.mode = STATES.RETURNING;
           this.emit('Maximum manual cycle time reached. Service return engaged.', 'error');
@@ -550,7 +572,7 @@ export class RideController extends EventTarget {
           s.mode = STATES.RETURNING;
           this.emit('Programme complete. Returning the gondola to load position.');
         } else {
-          targetSpeed = command.arm * (17 + PROGRAMS[s.program].intensity * 4.5);
+          targetSpeed = command.arm * (27 + PROGRAMS[s.program].intensity * 7);
           s.armLock = command.arm === 0;
           this.applyBrake(command.brake);
         }
@@ -558,77 +580,110 @@ export class RideController extends EventTarget {
     }
 
     if (s.mode === STATES.RETURNING) {
-      const target = Math.round(s.armAngle / 360) * 360;
-      const error = target - s.armAngle;
-      targetSpeed = Math.abs(error) < 0.35 ? 0 : clamp(error * 0.85, -22, 22);
+      returnArmTarget = Math.round(s.armAngle / 360) * 360;
+      returnGondolaTarget = Math.round(s.gondolaAngle / 360) * 360;
+      const error = returnArmTarget - s.armAngle;
+      targetSpeed = Math.abs(error) < 0.25 ? 0 : clamp(error * 0.92, -28, 28);
       s.armLock = false;
       this.applyBrake(false);
-      const gondolaTarget = Math.round(s.gondolaAngle / 360) * 360;
-      const gondolaError = gondolaTarget - s.gondolaAngle;
-      const serviceAccel = clamp(gondolaError * 2.2 - s.gondolaVelocity * 1.45, -85, 85);
-      s.gondolaVelocity += serviceAccel * dt;
-      if (Math.abs(error) < 0.65 && Math.abs(s.armVelocity) < 1.5
-        && Math.abs(gondolaTarget - s.gondolaAngle) < 2 && Math.abs(s.gondolaVelocity) < 2.5) {
-        s.armAngle = target;
-        s.gondolaAngle = gondolaTarget;
-        s.armVelocity = 0;
-        s.gondolaVelocity = 0;
-        s.armLock = true;
-        this.brakeOffset = 0;
-        this.applyBrake(true);
-        this.completeCycle();
-        return;
-      }
     }
 
     if (![STATES.RUNNING, STATES.RETURNING].includes(s.mode)) targetSpeed = 0;
     if (s.fault || s.estop || s.armLock) targetSpeed = 0;
 
-    const acceleration = Math.abs(targetSpeed) > Math.abs(s.armVelocity) ? 31 : 47;
-    s.armVelocity = approach(s.armVelocity, targetSpeed, acceleration * dt);
     const oldArm = s.armAngle;
-    s.armAngle += s.armVelocity * dt;
-    const armDelta = s.armAngle - oldArm;
-    const armAcceleration = (s.armVelocity - this.lastArmVelocity) / Math.max(dt, 0.001);
-    this.lastArmVelocity = s.armVelocity;
-    this.lastArmAcceleration = armAcceleration;
+    const substeps = Math.max(1, Math.ceil(dt / (1 / 180)));
+    const step = dt / substeps;
+    let pivotAccelerationY = 0;
+    let pivotAccelerationZ = 0;
+    let thetaAcceleration = 0;
 
-    // A Top Spin gondola is a pendulum mounted to a motor-driven moving pivot.
-    // Integrate that mechanism in SI units, then expose degrees to the UI/scene.
-    const alpha = s.armAngle * DEG;
-    const alphaVelocity = s.armVelocity * DEG;
-    const alphaAcceleration = armAcceleration * DEG;
-    let theta = s.gondolaAngle * DEG;
-    let thetaVelocity = s.gondolaVelocity * DEG;
-    const pivotAccelerationZ = ARM_RADIUS * (Math.sin(alpha) * alphaVelocity ** 2 - Math.cos(alpha) * alphaAcceleration);
-    const pivotAccelerationY = ARM_RADIUS * (Math.cos(alpha) * alphaVelocity ** 2 + Math.sin(alpha) * alphaAcceleration);
-    let thetaAcceleration = (-GRAVITY * Math.sin(theta)
-      + pivotAccelerationZ * Math.cos(theta)
-      - pivotAccelerationY * Math.sin(theta)) / GONDOLA_COM_OFFSET;
-    thetaAcceleration -= thetaVelocity * 0.085;
+    // Semi-implicit sub-stepping keeps brake captures and multiple flips stable
+    // even when a slow browser frame supplies the maximum 50 ms timestep.
+    for (let index = 0; index < substeps; index += 1) {
+      const previousArmVelocity = s.armVelocity;
+      const driveAcceleration = Math.abs(targetSpeed) > Math.abs(s.armVelocity) ? 46 : 68;
+      s.armVelocity = approach(s.armVelocity, targetSpeed, driveAcceleration * step);
+      if (s.fault || s.estop) s.armVelocity = approach(s.armVelocity, 0, 110 * step);
+      const armAcceleration = (s.armVelocity - previousArmVelocity) / step;
+      s.armAngle += s.armVelocity * step;
 
-    const pressureTarget = s.gondolaBrake ? 1 : 0;
-    s.brakePressure = approach(s.brakePressure, pressureTarget, dt * (s.gondolaBrake ? 3.8 : 6.5));
-    if (s.brakePressure > 0.001) {
-      const relativeAngle = wrappedAngle((s.gondolaAngle - s.armAngle) - this.brakeOffset) * DEG;
+      const alpha = s.armAngle * DEG;
+      const alphaVelocity = s.armVelocity * DEG;
+      const alphaAcceleration = armAcceleration * DEG;
+      let theta = s.gondolaAngle * DEG;
+      let thetaVelocity = s.gondolaVelocity * DEG;
+      pivotAccelerationZ = ARM_RADIUS * (Math.sin(alpha) * alphaVelocity ** 2 - Math.cos(alpha) * alphaAcceleration);
+      pivotAccelerationY = ARM_RADIUS * (Math.cos(alpha) * alphaVelocity ** 2 + Math.sin(alpha) * alphaAcceleration);
+
+      if (s.mode === STATES.RETURNING) {
+        const gondolaError = (returnGondolaTarget - s.gondolaAngle) * DEG;
+        thetaAcceleration = clamp(gondolaError * 4.8 - thetaVelocity * 2.9, -4.6, 4.6);
+      } else {
+        thetaAcceleration = (-GRAVITY * Math.sin(theta)
+          + pivotAccelerationZ * Math.cos(theta)
+          - pivotAccelerationY * Math.sin(theta)) / PHYSICAL_PENDULUM_LENGTH;
+        thetaAcceleration -= thetaVelocity * (0.036 + 0.008 * Math.abs(thetaVelocity));
+      }
+
+      const pressureTarget = s.gondolaBrake ? 1 : 0;
+      s.brakePressure = approach(s.brakePressure, pressureTarget, step * (s.gondolaBrake ? 4.7 : 8.5));
       const relativeVelocity = thetaVelocity - alphaVelocity;
-      const caliperAcceleration = clamp(-relativeAngle * 27 - relativeVelocity * 10.5, -21, 21);
-      thetaAcceleration += caliperAcceleration * s.brakePressure;
-    }
+      let caliperAcceleration = 0;
+      if (s.brakePressure > 0.002 && s.mode !== STATES.RETURNING) {
+        const relativeAngle = wrappedAngle((s.gondolaAngle - s.armAngle) - this.brakeOffset) * DEG;
+        s.brakeFade = clamp(1 - Math.max(0, s.brakeTemperature - 155) / 210, 0.56, 1);
+        caliperAcceleration = clamp(-relativeAngle * 38 - relativeVelocity * 15.5, -32, 32)
+          * s.brakePressure * s.brakeFade;
+        thetaAcceleration += caliperAcceleration;
 
-    if (s.mode !== STATES.RETURNING) {
-      thetaVelocity += thetaAcceleration * dt;
-      thetaVelocity = clamp(thetaVelocity, -4.9, 4.9);
-      theta += thetaVelocity * dt;
+        if (s.brakePressure > 0.985 && Math.abs(relativeVelocity) < 0.07 && Math.abs(relativeAngle) < 0.012) {
+          theta = (s.armAngle + this.brakeOffset) * DEG;
+          thetaVelocity = alphaVelocity;
+          thetaAcceleration = alphaAcceleration;
+        }
+      }
+
+      s.brakeTemperature = clamp(
+        s.brakeTemperature
+          + Math.abs(caliperAcceleration * relativeVelocity) * step * 0.13
+          - Math.max(0, s.brakeTemperature - 22) * step * 0.028,
+        22,
+        280
+      );
+      if (s.brakeTemperature < 155) s.brakeFade = 1;
+
+      thetaVelocity += thetaAcceleration * step;
+      thetaVelocity = clamp(thetaVelocity, -7.4, 7.4);
+      theta += thetaVelocity * step;
       s.gondolaVelocity = thetaVelocity * RAD_TO_DEG;
       s.gondolaAngle = theta * RAD_TO_DEG;
-    } else {
-      s.gondolaAngle += s.gondolaVelocity * dt;
     }
 
+    const armDelta = s.armAngle - oldArm;
+    this.lastArmAcceleration = (s.armVelocity - this.lastArmVelocity) / Math.max(dt, 0.001);
+    this.lastArmVelocity = s.armVelocity;
+
     if (s.fault) {
-      s.armVelocity = approach(s.armVelocity, 0, 85 * dt);
-      s.gondolaVelocity = approach(s.gondolaVelocity, 0, 95 * dt);
+      s.gondolaVelocity = approach(s.gondolaVelocity, 0, 105 * dt);
+    }
+
+    if (s.mode === STATES.RETURNING) {
+      const armError = returnArmTarget - s.armAngle;
+      const gondolaError = returnGondolaTarget - s.gondolaAngle;
+      if (Math.abs(armError) < 0.65 && Math.abs(s.armVelocity) < 1.5
+        && Math.abs(gondolaError) < 1.6 && Math.abs(s.gondolaVelocity) < 2.3) {
+        s.armAngle = returnArmTarget;
+        s.gondolaAngle = returnGondolaTarget;
+        s.armVelocity = 0;
+        s.gondolaVelocity = 0;
+        s.armLock = true;
+        this.brakeOffset = 0;
+        this.applyBrake(true);
+        s.brakePressure = 1;
+        this.completeCycle();
+        return;
+      }
     }
 
     if (s.mode === STATES.RUNNING) {
@@ -641,8 +696,8 @@ export class RideController extends EventTarget {
     const s = this.state;
     const theta = s.gondolaAngle * DEG;
     const omega = s.gondolaVelocity * DEG;
-    const relativeAccelerationZ = GONDOLA_COM_OFFSET * (Math.sin(theta) * omega ** 2 - Math.cos(theta) * thetaAcceleration);
-    const relativeAccelerationY = GONDOLA_COM_OFFSET * (Math.cos(theta) * omega ** 2 + Math.sin(theta) * thetaAcceleration);
+    const relativeAccelerationZ = RIDER_RADIUS * (Math.sin(theta) * omega ** 2 - Math.cos(theta) * thetaAcceleration);
+    const relativeAccelerationY = RIDER_RADIUS * (Math.cos(theta) * omega ** 2 + Math.sin(theta) * thetaAcceleration);
     const specificZ = pivotAccelerationZ + relativeAccelerationZ;
     const specificY = pivotAccelerationY + relativeAccelerationY + GRAVITY;
     s.currentG = clamp(Math.hypot(specificZ, specificY) / GRAVITY, 0, 6.2);
@@ -662,6 +717,7 @@ export class RideController extends EventTarget {
       s.continuousInversions += change;
       s.maxContinuousInversions = Math.max(s.maxContinuousInversions, s.continuousInversions);
       s.achievements.inversions3 ||= s.maxContinuousInversions >= 3;
+      s.achievements.inversions4 ||= s.maxContinuousInversions >= 4;
       s.achievements.inversions5 ||= s.maxContinuousInversions >= 5;
       s.score += change * 120;
       this.previousInversionBand = inversionBand;
